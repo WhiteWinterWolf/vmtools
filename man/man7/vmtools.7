@@ -1,0 +1,437 @@
+.\" ############################################################################
+.\" ### /usr/local/share/man/man5/vmtools.conf.5.gz BEGIN
+.\" ############################################################################
+.\"
+.\" Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+.\"
+.\" This file is part of vmtools.
+.\"
+.\" vmtools is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
+.\"
+.\" ############################################################################
+.
+.Dd June 3, 2017
+.Dt VMTOOLS 7
+.Os vmtools
+.
+.
+.Sh NAME
+.
+.Nm vmtools
+.Nd a virtual machines manager based on Qemu
+.
+.
+.Sh DESCRIPTION
+.
+.Nm
+is a virtual machines manager which strives to be easy, versatile and modular
+to empower the user as much as possible while adhering to the principle of
+least privileges.
+.Bl -tag -width Ds
+.It Easy
+Every bootable thing should be throwable as-is to the
+.Xr vmup 1
+command to be immediately started in a hassle-free fashion, from local
+standalone disk images files to remote URLs passing through
+.Pa .ova
+archives to device files.
+.Pp
+More permanent virtual machines are represented by directories (created using
+.Xr vmcreate 1 )
+which can be stored anywhere to match user's own taste and can be manipulated
+using the provided
+.Xr vmmv 1 ,
+.Xr vmcp 1
+and
+.Xr vmrm 1
+commands to safely move, copy or delete them.
+.Pp
+The virtual machine settings are stored in a small human-readable text file
+allowing to get and update the virtual machine settings at a glance with the
+most basic text editor.
+.It Versatile
+.Nm
+commands do as few assumptions as possible on the way the user will use them,
+while providing as many options as possible to customize the command behavior.
+.Pp
+All commands support the
+.Fl h
+flag to access the help summary, while the man pages provide a more in-depth
+explanation.
+Most man pages also contain practical examples illustrating the usage of the
+most common options combinations.
+.Pp
+The virtual machines themselves are not standalone entities, but can inherit
+settings from templates and parent virtual machines from which they have been
+forked (see
+.Sx INHERITANCE
+below).
+.It Modular
+Not only
+.Nm
+is entirely developped in shell script language making it easy to inspect and
+modify it, but it is also explicitely modular.
+.Pp
+The process of creating, starting or cloning a virtual machine is indeed
+completely open for the user to complete or redefine as needed.
+.Pp
+.Nm
+modules categories are as follow:
+.Pp
+.Bl -tag -width "configure" -offset indent
+.It Cm configure
+These modules are invoked during the virtual machine creation process. It
+contains two modules sub-categories:
+.Cm templates
+which allows to select the templates to apply to the virtual machine,
+.Cm settings
+which allows to define the virtual machine actual settings.
+The modules either interactively prompt the user for some input or
+automatically determine a value (for instance depending on some properties of
+the image file to boot).
+.It Cm buildcmd
+These modules rely the virtual machine settings to build the Qemu command-line
+which will be used to start the guest system.
+.It Cm clone
+These modules control the cloning process which occurs when copying or forking
+a virtual machine.
+.El
+.Pp
+See
+.Sx CUSTOMIZATION
+below for more information on disabling, overriding or adding new modules.
+.It Principle of least privilege
+As opposed to some other virtual machines management tools,
+.Nm
+does not require root privileges, it not require any privileged service to
+run and in fact do not require any background service at all.
+.Pp
+The beauty of Qemu and KVM is to allow unprivileged users to fully manage
+virtual machines.
+Having to use a management software requiring root privileges for its own
+business somewhat breaks this concept, sometimes with no real advantage for
+the end-user.
+.Pp
+.Nm
+acts as wrapper around Qemu commands to fully take advantage of Qemu and KVM
+least privilege design.
+It does not attempt to reinvent the wheel: all access permissions are handled
+by the underlying filesystem permissions.
+.Pp
+The consequence of this is that there is no standardized central virtual
+machines repository.
+Instead, each user is the owner of its own virtual machines which are
+fundamentally just directories containing a setting file.
+The user is free to handle and organize them at will, optionally share them
+in either read-only or read-write mode, as he would do with any other file.
+.El
+.
+.
+.Sh INHERITANCE
+.
+.Nm
+implements an inheritance system making a typical virtual settings file
+rather small as it should contain only the few variables customized for the
+current virtual machine.
+.Pp
+Details on the file structure and on the available settings is available in
+.Xr vmtools.conf 5
+man page.
+.
+.Ss Parent and child (forked) virtual machines
+Virtual machines can be copied and forked using the
+.Xr vmcp 1
+and
+.Xr vmfork 1
+commands.
+.Pp
+Forking a virtual machine, copying the forks, re-forking them allows to create
+a virtual machines tree where a leaf virtual machine inherits all its settings
+from its ancestors (settings from the farthest ancestor being overwritten by
+the settings of the closest one).
+.Pp
+It is possible to apply a change to a whole virtual machine tree at once by
+simply editing a parent virtual machine as long as the childs do not redefine
+the value.
+Changing the amount of allocated RAM for a whole group of virtual machine can
+therefore be as simple as changing one single value in one single file.
+.Pp
+While the leaf virtual machines can be started without restriction, forked
+virtual machines (those with at least one child) can only be started in
+snapshot or read-only mode.
+It is indeed forbidden to alter their storage backend file as this would break
+their child's storage.
+If you need to apply some changes to a virtual machine with a child, just fork
+it.
+.Pp
+The
+.Xr vminfo 1
+command proposes the
+.Fl t
+flag to visually inspect a virtual machine tree.
+A virtual machine can have only a single parent but may have several childs.
+The
+.Xr vmmerge 1
+command allows to merge a previously forked virtual machine.
+.
+.Ss Templates
+Templates implements settings inheritance for virtual machines which are not
+forked from each other.
+.Pp
+The virtual machines inherits their settings from one or several templates (the
+templates can in turn reference one or several other templates), and may either
+directly use them as new defaults or overwrite inheritted values as they would
+do with settings inherited from a parent virtual machine.
+.Pp
+There is two main uses of virtual machines templates:
+.Bl -tag -offset indent
+.It Technical
+A legacy PC will not use the same settings as a modern PC, and neither of them
+will use the same settings as a MacOS machine, however each of them shares
+common base settings with every other members of the same category.
+.Pp
+The templates allows to implement those technical categories, providing new
+defaults for each classes.
+.It Logical
+As stated above, virtual machine parent inheritance allows may allow to change
+a setting for a whole tree by editing only one value in one file.
+Logical templates allows to link templates which would however not be related
+to they can share some settings.
+.Pp
+For instance all virtual machines belonging to a given project or department
+can be logically linked by referring to the same template specific to this
+project or department.
+Some virtual machine settings (like the amount of RAM, the number of vitual
+CPUs, the display server port range, network settings like the VLAN number,
+etc.) can then be centralized in this template file.
+.El
+.
+.
+.Sh CUSTOMIZATION
+.
+The
+.Pa vmtools.conf
+file and the content of the
+.Pa modules
+directory can be overriden at the system and optionally at the user level.
+.
+.Ss Customizing default settings
+To override some default settings system-wide, set them in the
+.Pa /etc/vmtools/vmtools.conf
+file.
+Optionally, if
+.Cm cfg_include_userhome
+is set to
+.Dq yes
+(either in
+.Pa /etc/vmtools/vmtools.conf
+or by using a command-line argument such as
+.Fl o ) ,
+default settings can also be overriden at the user level in the
+.Pa ~/.config/vmtools/vmtools.conf
+(see
+.Sx FILES
+below for more information on how to select another location).
+.Pp
+Settings are overriden on a per-setting basis, so there is no requirement to
+copy all default settings in the customized
+.Pa vmtools.conf ,
+this file should contain only the customized values.
+.Pp
+New setting names can be added to the customized
+.Pa vmtools.conf
+file.
+These new settings may be used for instance by custom modules and can be of any
+type.
+Settings names must contain only alphanumeric and underscore characters and
+begin with either the
+.Cm cfg_
+or
+.Cm vm_
+prefix (see
+.Cx vmtools.conf
+for more information on settings names).
+.Pp
+To avoid any side-effect when upgrading to newer version of
+.Nm ,
+prefer to
+name the new settings with names beginning with either
+.Cm cfg_custom_
+or
+.Cm vm_custom_
+(for instance
+.Cm vm_custom_group
+would be a perfect custom setting name) as these names will never be used by
+.Nm .
+.Pp
+When assigning a new default to a setting, also consider using a template (see
+.Sx Inheritance: templates
+above) to assign the new default value only to a group of selected virtual
+machines.
+.
+.Ss Customizing modules
+To override a module system-wide, create a
+.Pa modules
+directory with a similar tree than the default
+.Pa /usr/local/share/vmtools/modules
+and store the customized version of the module there.
+Optionally, if
+.Cm cfg_include_userhome
+is set to
+.Dq yes
+(either in
+.Pa /etc/vmtools/vmtools.conf
+or by using a command-line argument such as
+.Fl o ) ,
+default modules can also be overriden at the user level in the
+.Pa ~/.config/vmtools/modules
+(see
+.Sx FILES
+below for more information on how to select another location).
+.Pp
+Modules are overriden on a per-file basis: if a customized module file bears
+the same name as a default one, only the customized file will be used and the
+default one will be ignored (see
+.Sx FILES
+below for more information on location precedence).
+.Pp
+New modules can be added in custom
+.Pa modules
+directory trees.
+The name of these new modules must be added to the appropriate
+.Cm cfg_modules_ Ns Ar *
+variable to be taken into account.
+Module name must contain only alphanumeric characters and underscores.
+.Pp
+To avoid any side-effect when upgrading to newer version of
+.Nm ,
+prefer to
+name new modules with names beginning with
+.Cm c_
+(for instance
+.Cm c_dev
+would be a perfect custom module name) as such name will never be used by
+.Nm .
+.Pp
+See the various
+.Pa README
+files in the
+.Pa modules
+subdirectories for more advices and examples to build or customize a
+.Nm
+module.
+.
+.
+.Sh COMMANDS
+.Nm
+commands are as follows:
+.Pp
+.Bl -tag -width "vmrndmac(1)" -compact -offset indent
+.It Xr vmcp 1
+Copy or fork virtual machines.
+.It Xr vmcreate 1
+Create a new virtual machine.
+.It Xr vmdown 1
+Shutdown a virtual machine.
+.It Xr vmfix 1
+Detect and fix virtual machines issues.
+.It Xr vmfork 1
+Copy or fork virtual machines.
+.It Xr vminfo 1
+Report information on a virtual machine.
+.It Xr vmmerge 1
+Merge two related virtual machines.
+.It Xr vmmon 1
+Access the Qemu monitor shell of a virtual machine.
+.It Xr vmmv 1
+Move or rename a virtual machine home directory.
+.It Xr vmps 1
+Report information on running virtual machines.
+.It Xr vmrm 1
+Delete a virtual machine home directory.
+.It Xr vmrndmac 1
+Generate a random MAC address.
+.It Xr vmup 1
+Start virtual machine or a bootable file or media.
+.El
+.
+.Sh ENVIRONMENT
+.
+.Bl -tag -width Ds
+.It Ev TMPDIR
+Default location to store temporary files, by default
+.Pa /tmp .
+.
+.It Ev XDG_CONFIG_HOME
+Location of user's configuration files, by default
+.Pa ~/.config .
+.El
+.
+.
+.Sh FILES
+.
+.Bl -tag -width Ds
+.It Pa /usr/local/bin
+Executable files.
+.It Pa /usr/local/lib/vmtools
+Libraries shared by the vmtools project utilities.
+.It Pa /usr/local/share/man
+Project man pages.
+.It Pa /usr/local/share/vmtools/modules
+Default modules location.
+.It Pa /usr/local/share/vmtools/vmtools.conf
+Virtual machine default settings, see
+.Xr vmtools.conf 5 .
+.El
+.Pp
+Moreover, the content of
+.Pa /usr/local/share/vmtools
+can be overridden in the following locations (in the order of precedence):
+.Bl -tag -width Ds
+.It ~/.config/vmtools
+User overrides (if
+.Cm cfg_include_userhome
+is set to
+.Dq yes ) .
+.It /etc/vmtools
+System-wide overrides.
+.El
+.
+.
+.Sh SEE ALSO
+.
+.Xr vmcp 1 ,
+.Xr vmcreate 1 ,
+.Xr vmdown 1 ,
+.Xr vmfix 1 ,
+.Xr vmfork 1 ,
+.Xr vminfo 1 ,
+.Xr vmmerge 1 ,
+.Xr vmmon 1 ,
+.Xr vmmv 1 ,
+.Xr vmps 1 ,
+.Xr vmrm 1 ,
+.Xr vmrndmac 1 ,
+.Xr vmup 1 ,
+.Xr vmtools.conf 5 ,
+.
+.
+.Sh REPORTING BUGS
+.
+Please send bug reports to the
+.Lk http://github.com/WhiteWinterWolf/vmtools/issues "vmtools issues page" .
+.
+.\" ############################################################################
+.\" ### /usr/local/share/man/man5/vmtools.conf.5.gz END
+.\" ############################################################################

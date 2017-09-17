@@ -1,0 +1,429 @@
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmps.1.gz BEGIN
+.\" ############################################################################
+.\"
+.\" Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+.\"
+.\" This file is part of vmtools.
+.\"
+.\" vmtools is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
+.\"
+.\" ############################################################################
+.
+.Dd June 3, 2017
+.Dt VMPS 1
+.Os vmtools
+.
+.
+.Sh NAME
+.
+.Nm vmps
+.Nd report information on running virtual machines
+.
+.
+.Sh SYNOPSIS
+.
+.Nm
+.Op Fl hqrv
+.Op Fl n | Oo Fl o Cm cdehmnpqu Oc Oo Fl s Cm CcDdEeHhMmNnPpQqUu Oc
+.Op Fl a
+.
+.Nm
+.Op Fl hqrv
+.Op Fl n | Oo Fl o Cm cdehmnpqu Oc Oo Fl s Cm CcDdEeHhMmNnPpQqUu Oc
+.Fl p Ar vmhome_dir ...
+.
+.Nm
+.Op Fl hqrv
+.Op Fl n | Oo Fl o Cm cdehmnpqu Oc Oo Fl s Cm CcDdEeHhMmNnPpQqUu Oc
+.Fl p Ar pid ...
+.
+.Nm
+.Op Fl hqrv
+.Op Fl n | Oo Fl o Cm cdehmnpqu Oc Oo Fl s Cm CcDdEeHhMmNnPpQqUu Oc
+.Fl u Ar user ...
+.
+.
+.Sh DESCRIPTION
+.
+Report information on the currently running virtual machines.
+.Pp
+The
+.Fl o
+and
+.Fl s
+flags allow to select the
+.Nm
+fields to respectively output and use as sort keys.
+See
+.Sx vmps fields
+below for more information.
+.Pp
+The expected arguments depend on the virtual machines selection method used.
+See
+.Sx Virtual machines selection options
+for more information on the available methods.
+.
+.Ss vmps fields
+.
+The one-letter identifiers below can be used with the
+.Fl o
+and
+.Fl s
+flags to select vmps fields for output or as sort keys.
+.Pp
+Their uppercase counterparts can be used with
+.Fl s
+to sort in descending order instead of the default ascending order.
+They cannot be used with
+.Fl o .
+.Pp
+If no column has been explicitely selected for output, the default is
+.Fl o Cm pnd .
+.Pp
+If no column has been explicitely selected as sort key, the default is to not
+sort the output.
+.Pp
+The
+.Nm
+field identifiers are as follows:
+.
+.Bl -tag -width "A" -offset indent
+.It Cm c
+CPU activity (%): this value reflects
+.Xr ps 1
+.Cm pcpu
+field which is loosely defined as follow in POSIX.1-2008:
+.Pp
+.Bd -filled -offset indent
+The ratio of CPU time used recently to CPU time available in the same period,
+expressed as a percentage.
+The meaning of
+.Dq recently
+in this context is unspecified.
+The CPU time available is determined in an unspecified manner.
+.Ed
+.Pp
+The goal of this indicator is therefore more to get a rough idea of the
+relative load caused by a virtual machines than to obtain any precise measure.
+.Pp
+This value may be empty if the local
+.Xr ps 1
+command does not support the
+.Cm pcpu
+field (this is notably the case on BusyBox-based environments).
+.
+.It Cm d
+Display: this value indicates the virtual machine display method and URL (if
+applicable).
+The content of this field may be one of the following:
+.Bl -tag -width Ds -offset indent
+.It Cm disabled
+Qemu display output has been disabled (the guest still has a graphical device
+enabled).
+.It Cm gtk
+Qemu uses the GTK library.
+.It Cm none
+No graphical device has been enabled for the guest.
+.It Cm sdl
+Qemu uses the SDL library.
+.It Cm spice:// Ns Ar address Ns Cm \&: Ns Ar port
+A SPICE server is listening on the TCP
+.Ar address
+and
+.Ar port .
+.It Cm vnc:// Ns Ar address Ns Cm \&: Ns Ar port
+A VNC server is listening on the TCP
+.Ar address
+and
+.Ar port .
+.Pp
+If a VNC client expects a VNC display ID instead of a TCP port number,
+substract 5900 from the TCP port number to obtain it (the port 5900 is
+equivalent to the VNC display ID 0, the port 5901 to VNC display ID 1, etc.).
+.It Cm \&?
+The display mode used has not been recognized.
+.El
+.
+.It Cm e
+Command-line: display the complete Qemu command-line executed to start the
+virtual machine.
+.
+.It Cm h
+Virtual machine's home directory if it has one, otherwise this field is empty.
+.
+.It Cm m
+Virtual memory allocated (KB): this value reflects
+.Xr ps 1
+.Cm vsz
+field.
+.
+.It Cm n
+Virtual machine's name if it has one, otherwise this field is empty.
+.
+.It Cm p
+PID of the Qemu hypervisor process running the virtual machine.
+.
+.It Cm q
+Qemu monitor socket: path to the socket file providing access to the Qemu
+monitor shell, or empty if the virtual machine doesn't have a Qemu monitor
+socket file.
+.
+.It Cm u
+User owner of the Qemu hypervisor process running the virtual machine.
+.El
+.
+.
+.Sh OPTIONS
+.
+.Ss Virtual machines selection options
+Each of these flags is exclusive.
+By default
+.Fl u Ev $LOGNAME
+is assumed.
+.Pp
+These flags do not directly take an argument, but instead affect the arguments
+expected by
+.Nm .
+.Pp
+The virtual machines selection options are as follows:
+.
+.Bl -tag -width Ds
+.It Fl a
+Select the virtual machines from all users.
+.Pp
+This flag does not expect any argument to be provided to
+.Nm .
+.
+.It Fl d
+Select the virtual machines by home directory.
+.Pp
+When this flag is used,
+.Nm
+expects at least one virtual machine home directory to be provided as
+command-line argument.
+.
+.It Fl p
+Select by PID.
+.Pp
+When this flag is used,
+.Nm
+expects at least one PID to be provided as command-line argument.
+.
+.It Fl u
+Select by user.
+.Pp
+When this flag is used,
+.Nm
+expects at least one username or UID to be provided as command-line argument.
+.El
+.
+.Ss Other options
+.
+The other options are as follows:
+.
+.Bl -tag -width Ds
+.It Fl h
+Show usage information summary then exit.
+.
+.It Fl n
+Do not write anything on standard output, only use the exit code to determine
+whether at least one running virtual machine matched the provided criterion.
+.Pp
+This option is not compatible with
+.Fl o
+and
+.Fl s .
+.
+.It Fl o Ar vmps_fields
+Select the columns to display.
+.Pp
+.Ar vmps_fields
+is a combination of vmps field identifiers.
+The identifiers order dictates the columns order in the output.
+See
+.Sx vmps fields
+above for the list and description of the available identifiers.
+.Pp
+This flag can be specified only once.
+.br
+It is not compatible with
+.Fl n .
+.
+.It Fl q
+Decrease verbosity.
+Add several
+.Fl q
+options to decrease verbosity even more
+.Fl ( qq
+by default to get minimal output).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl v
+to increase the verbosity level.
+.
+.It Fl r
+Raw list, do not display the column headers.
+.
+.It Fl s Ar vmps_fields
+Select the sort keys.
+.Pp
+.Ar vmps_fields
+is a combination of vmps field identifiers.
+The identifiers order dictates the keys precedency.
+There is no requirement to select for output the fields selected here.
+See
+.Sx vmps fields
+above for the list and description of the available identifiers.
+.Pp
+This flag can be specified only once.
+.br
+It is not compatible with
+.Fl n .
+.
+.It Fl v
+Increase verbosity.
+Add several
+.Fl v
+options to increase verbosity even more
+.Fl ( vvv
+by default to get the most verbose output, including debugging messages).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl q
+to decrease the verbosity level.
+.El
+.
+.
+.Sh ENVIRONMENT
+.
+.Bl -tag -width Ds
+.It Ev TMPDIR
+Default location to store temporary files, by default
+.Pa /tmp .
+.
+.It Ev XDG_CONFIG_HOME
+Location of user's configuration files, by default
+.Pa ~/.config .
+.El
+.
+.
+.Sh FILES
+.
+.Bl -tag -width Ds
+.It Pa /proc
+When available, the
+.Xr proc 5
+pseudo-filesystem is used to fetch the Qemu processes command-line.
+.It Pa /usr/local/lib/vmtools
+Libraries shared by the vmtools project utilities.
+.It Pa /usr/local/share/vmtools/vmtools.conf
+Virtual machine default settings, see
+.Xr vmtools.conf 5 .
+.El
+.Pp
+Moreover, the content of
+.Pa /usr/local/share/vmtools
+can be overridden in the following locations (in the order of precedence):
+.Bl -tag -width Ds
+.It ~/.config/vmtools
+User overrides (if
+.Cm cfg_include_userhome
+is set to
+.Dq yes ) .
+.It /etc/vmtools
+System-wide overrides.
+.El
+.
+.
+.Sh EXIT STATUS
+.
+.Bl -tag -compact -width Ds
+.It 0
+Success: at least one of the selected virtual machines is running.
+.It 1
+An internal error occured.
+.It 2
+Wrong usage.
+.It 3
+None of the selected virtual machines is running, no result to display.
+.El
+.
+.
+.Sh EXAMPLES
+.
+.Bl -inset
+.It Example 1:
+List all users' running virtual machines, adding the username to the default
+output fields:
+.Pp
+.Dl Ic vmps -o upnd -a
+.Pp
+.It Example 2:
+An equivalent of
+.Xr top 1
+to monitor the global virtual machines activity:
+.Pp
+.Dl Ic watch vmps -o pumcn -s CM -a
+.Pp
+.It Example 3:
+Obtain the home directory of a virtual machine from its PID:
+.Pp
+.Dl Ic ps -r -o h -p 1234
+.Pp
+.It Example 4:
+Script snippet checking that every required virtual machine is indeed running:
+.Pp
+.Bd -literal -offset indent
+if vmps -nd ./vm1 && vmps -nd ./vm2 && vmps -nd ./vm3
+then
+    # All virtual machines are running.
+    ...
+else
+    # At least one of them is not running.
+    ...
+fi
+.Ed
+.Pp
+.El
+.
+.
+.Sh SEE ALSO
+.
+.Xr vmdown 1 ,
+.Xr vminfo 1 ,
+.Xr vmup 1 ,
+.Xr vmtools 7
+.
+.
+.Sh CAVEATS
+.
+Providing the same virtual machine several times in the selection arguments
+makes this virtual machine appear as many times in the output.
+.
+.
+.Sh REPORTING BUGS
+.
+Please send bug reports to the
+.Lk http://github.com/WhiteWinterWolf/vmtools/issues "vmtools issues page" .
+.
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmps.1.gz END
+.\" ############################################################################

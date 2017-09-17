@@ -1,0 +1,165 @@
+#! /bin/sh -efu
+################################################################################
+### /usr/local/bin/vmrm BEGIN
+################################################################################
+#
+# Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+#
+# This file is part of vmtools.
+#
+# vmtools is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+################################################################################
+
+usage="Delete a virtual machine home directory.
+
+Usage:
+  vmrm [-hkqrvy] vmhome_dir ...
+
+Options:
+  -h    Show usage information.
+  -k    Keep storage and unrecognized files.
+  -q    Decrease verbosity.
+  -r    Recursive mode: remove all child virtual machines too.
+  -v    Increase verbosity.
+  -y    Do not ask any confirmation, assume 'yes'.
+"
+
+
+################################################################################
+# Global variables
+################################################################################
+
+# Delete all by default
+deleteall_opt='-a'
+
+# Recursive mode disabled by default.
+recursive_opt=''
+
+# Options to pass to the `rm' command.
+rm_opts=''
+
+
+################################################################################
+# Functions
+################################################################################
+
+# Loading shared libs (loading them all is faster than nitpicking).
+for f in $( find '/usr/local/lib/vmtools' -name '*.inc.sh' )
+do
+	. "$f" || exit 1
+done
+
+
+################################################################################
+# Parse parameters
+################################################################################
+
+include_globalconf || exit 1
+
+OPTIND=1
+while getopts "hkqrvy" param
+do
+	case "$param" in
+		'h') # Show usage information.
+			printf '%s\n' "$usage"
+			exit 0
+			;;
+
+		'k') # Keep storage and other unknown files.
+			deleteall_opt=''
+			;;
+
+		'q') # Decrease verbosity.
+			if [ "${cfg_ui_verbosity:?}" -gt 0 ]
+			then
+				cfg_ui_verbosity=$(( cfg_ui_verbosity - 1 )) || exit 1
+			fi
+			;;
+
+		'r') # Recursive: remove all child VMs too.
+			recursive_opt='-r'
+			;;
+
+		'v') # Increase verbosity.
+			cfg_ui_verbosity=$(( ${cfg_ui_verbosity:?} + 1 )) || exit 1
+			;;
+
+		'y') # Do not ask anything.
+			settings_override 'cfg_ui_assumeyes' 'yes'
+			;;
+
+		*)
+			printf 'Unexpected argument: %s\n' "$1" >&2
+			exit 2
+			;;
+	esac
+done
+shift $(( OPTIND - 1 ))
+
+settings_set 'cfg_ui_verbosity' "${cfg_ui_verbosity:?}"
+if [ "${cfg_ui_verbosity:?}" -ge 5 ]
+then
+	set -x
+fi
+
+if [ $# -eq 0 ]
+then
+	echo "ERROR: Name of the directory to delete missing." >&2
+	exit 2
+fi
+
+
+################################################################################
+# Main
+################################################################################
+
+rc=0
+
+# Acquire all required locks before deleting anything.
+for dir
+do
+	(
+		dir=$( realpath -- "$dir" ) || exit 1
+
+		if [ -n "$recursive_opt" ]
+		then
+			lock_acquire -c -- "$dir" || exit 1
+		else
+			lock_acquire -- "$dir" || exit 1
+		fi
+
+		parent_path=$( parent_get_nearest "$dir" ) || exit 1
+		if [ -n "$parent_path" ]
+		then
+			lock_acquire -- "$parent_path" || exit 1
+		fi
+
+		homedir_delete ${deleteall_opt:+"$deleteall_opt"} \
+			${recursive_opt:+"$recursive_opt"} -- "$dir"
+
+		if [ -n "$parent_path" ]
+		then
+			lock_release --  "$parent_path" || exit 1
+		fi
+
+		cleanup_end
+	) || rc=1
+done
+
+exit "$rc"
+
+################################################################################
+### /usr/local/bin/vmrm END
+################################################################################

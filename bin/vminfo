@@ -1,0 +1,464 @@
+#! /bin/sh -efu
+################################################################################
+### /usr/local/bin/vminfo BEGIN
+################################################################################
+#
+# Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+#
+# This file is part of vmtools.
+#
+# vmtools is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+################################################################################
+
+usage="Report information on a virtual machine.
+
+Usage:
+  vminfo [-abhilqstvy] [vmhome_path...]
+
+Category selection:
+  -b    Storage backend.
+  -i    General information.
+  -s    Settings.
+  -t    Hierarchy tree.
+
+The default selection is '-itsb'.
+The order of the selection flags dictates the output order.
+
+Options:
+  -a    Use ASCII characters for formatting purpose instead of UTF-8.
+  -h    Show usage information.
+  -l    Long output.
+  -q    Decrease verbosity.
+  -v    Increase verbosity.
+  -y    Do not ask any confirmation, assume 'yes'.
+"
+
+# TODO: Add the generated command-line used to run the VM (using `vmup -nv`
+#  works only if the VM is not currently running).
+
+
+################################################################################
+# Global variables
+################################################################################
+
+# Action to perform, a mix of the letters 'b', 'i', 's', and 't'.
+action=''
+
+# Length of the banner's horizontal rules.
+banner_size=70
+
+# If "yes", UTF-8 formatting characters are replaced by their ASCII equivalent.
+output_ascii='no'
+
+# If "yes", enable long output to display more detailed information.
+output_long='no'
+
+
+################################################################################
+# Functions
+################################################################################
+
+# Loading shared libs (loading them all is faster than nitpicking).
+for f in $( find '/usr/local/lib/vmtools' -name '*.inc.sh' )
+do
+	. "$f" || exit 1
+done
+
+###
+# _backend
+#
+_backend() {
+	local 'rc'
+	rc=0
+
+	printf '%*s\n' "$banner_size" '' | tr ' ' '-'
+	printf '%s\n' '- Storage backend (-b)'
+	printf '%*s\n\n' "$banner_size" '' | tr ' ' '-'
+
+	if [ "$vm_storage_hdd1_enable" = 'yes' ]
+	then
+		_backend_output "HDD 1" "$vm_storage_hdd1_backend" || rc=1
+	fi
+
+	if [ "$vm_storage_hdd2_enable" = 'yes' ]
+	then
+		_backend_output "HDD 2" "$vm_storage_hdd2_backend" || rc=1
+	fi
+
+	if [ "$vm_storage_cdrom1_enable" = 'yes' ]
+	then
+		_backend_output "CD-ROM 1" "$vm_storage_cdrom1_backend" || rc=1
+	fi
+
+	if [ "$vm_storage_cdrom2_enable" = 'yes' ]
+	then
+		_backend_output "CD-ROM 2" "$vm_storage_cdrom2_backend" || rc=1
+	fi
+
+	return "$rc"
+}
+
+###
+# _backend_output label backend
+#
+_backend_output() {
+	local 'backend' 'label'
+	label=${1:?"ERROR (BUG): _backend_output: Missing parameter."}
+	backend=${2:-}
+
+	if [ -n "$backend" ]
+	then
+		echo "* ${label}: ${backend}"
+
+		backend=$( storage_get_path -- "$backend" ) || return 1
+		case "$backend" in /*)
+			echo
+			file -b "$backend" || return 1
+
+			if [ "$output_long" = 'yes' ]
+			then
+				echo
+				qemu-img info --backing-chain -- "$backend" || return 1
+			fi
+		esac
+	else
+		echo "* ${label}: Drive enabled, but no backend file selected."
+	fi
+
+	echo
+}
+
+###
+# _info
+#
+_info() {
+	local 'pid'
+
+	if vmps_init -q -d "$vm_home"
+	then
+		pid=$( vmps_get_pid )
+	else
+		pid=''
+	fi
+
+	printf '%*s\n' "$banner_size" '' | tr ' ' '-'
+	printf '%s\n' '- General information (-i)'
+	printf '%*s\n\n' "$banner_size" '' | tr ' ' '-'
+
+	printf 'Name: %-22s ' "${vm_name}"
+	if [ "$output_long" = 'yes' ]
+	then
+		if [ -n "$( parent_get_nearest )" ]
+		then
+			printf 'Parent: 1'
+		else
+			printf 'Parent: 0'
+		fi
+	fi
+	printf '\n'
+
+	if [ -n "$pid" ]
+	then
+		printf 'State: RUNNING %-13s ' "(PID ${pid})"
+	else
+		printf 'State: not running             '
+	fi
+	if [ "$output_long" = 'yes' ]
+	then
+		printf 'Childs: %s' "${pid:+"$( childs_get_list | wc -l )"}"
+	fi
+	printf '\n\n'
+
+	if [ "$output_long" = 'yes' ]
+	then
+		printf 'Display: %s\n' "${pid:+"$( vmps_get_display )"}"
+		printf 'Monitor: %s\n' "${pid:+"$( vmps_get_monitorfile )"}"
+		printf 'User: %s\n' "${pid:+"$( vmps_get_user )"}"
+		printf '\n'
+
+		printf 'Mem: %-15s' "${pid:+"$( cli_unit -- "$( vmps_get_vsz )" )"}"
+		printf 'CPU: %-15s' "${pid:+"$( vmps_get_pcpu ) %"}"
+		printf 'Disk: %-15s' "$( cli_unit -- "$( homedir_get_size )" )"
+		printf '\n\n'
+	fi
+}
+
+###
+# _settings
+#
+_settings() (
+	local 'homedir' 'settings'
+
+	printf '%*s\n' "$banner_size" '' | tr ' ' '-'
+	printf '%s\n' '- Settings (-s)'
+	printf '%*s\n\n' "$banner_size" '' | tr ' ' '-'
+
+	if [ "$output_long" != 'yes' ]
+	then
+		# Save `$vm_home' value which will be erased by `settings_reset()'.
+		homedir=$vm_home
+		settings_reset
+		settings_import -- "$homedir" || return 1
+		# Short output: `$settings' do not store default values.
+		settings=$( settings_get )
+	else
+		# Long output: `$settings' stores all settings.
+		settings=$( set )
+		printf '* vmtools settings:\n\n'
+		printf '%s' "$settings" | awk '/^cfg_/ { print "    ",$0 }'
+		printf '\n'
+	fi
+
+	printf '* Virtual machine settings:\n\n'
+	printf '%s' "$settings" | awk '/^vm_/ { print "    ",$0 }'
+	printf '\n'
+)
+
+###
+# _tree
+#
+_tree() (
+	local 'current_vm' 'draw_h' 'draw_r' 'draw_v' 'draw_vr' 'fs' 'rc' 'root_vm'
+	local 'tree_out'
+	current_vm=${vm_home:?}
+	# Field separator (037 = ASCII "Unit Separator" character).
+	fs=$( printf '\037' )
+	root_vm=$( parent_get_furthest ) || return 1
+	root_vm=${root_vm:-"${vm_home:?}"}
+	rc=0
+
+	printf '%*s\n' "$banner_size" '' | tr ' ' '-'
+	printf '%s\n' '- Hierarchy tree (-t)'
+	printf '%*s\n\n' "$banner_size" '' | tr ' ' '-'
+
+	if [ "$output_ascii" = 'yes' ]
+	then
+		draw_h='-'
+		draw_r='`'
+		draw_v='|'
+		draw_vr='+'
+	else
+		draw_h='─'
+		draw_r='└'
+		draw_v='│'
+		draw_vr='├'
+	fi
+
+	tree_out=$( _tree_recurse -- 1 "$current_vm" "$root_vm" ) || rc=1
+
+	printf '%s\n' "$tree_out" | column -s "$fs" -t
+	printf '\n(*: Current    R: Running    ?: Error)\n\n'
+	return "$rc"
+)
+
+###
+# _tree_recurse tree_lvl vm_selected vm_current [prefix1 prefix2]
+#
+_tree_recurse() (
+	local 'child' 'homedir' 'line1' 'line2' 'name' 'prefix1' 'prefix2' 'rc'
+	local 'status' 'tree_lvl'  'vm_selected'
+	[ "${1-}" = '--' ] && shift
+
+	settings_reset
+	tree_lvl=${1:?"ERROR (BUG): _tree_recurse: Missing parameter."}
+	vm_selected=${2:?"ERROR (BUG): _tree_recurse: Missing parameter."}
+	vm_home=${3:?"ERROR (BUG): _tree_recurse: Missing parameter."}
+	prefix1=${4:-''}
+	prefix2=${5:-''}
+	rc=0
+
+	tree_lvl=$(( level + 1 ))
+	if [ "$tree_lvl" -ge "${cfg_limit_nesting:?}" ]
+	then
+		echo "ERROR: A loop has been detected while creating the VM tree." >&2
+		echo "Current VM: '${vm_home}'." >&2
+		return 1
+	fi
+
+	settings_loadvm -s || rc=1
+	name=$( printf '%s' "${vm_name:-"${vm_home##*/}"}" | tr -- "$fs" '?' )
+
+	# VM status
+	status=''
+	[ "$vm_home" = "$vm_selected" ] && status="${status}*"
+	if [ "$rc" -eq 0 ]
+	then
+		if vmps_init -q -d "$vm_home"
+		then
+			# The VM is currently running.
+			status="${status}R"
+		fi
+	else
+		status="${status}?"
+	fi
+	status=${status:-"-"}
+
+	if [ "$output_long" = 'yes' ]
+	then
+		homedir=$( printf '%s' "$vm_home" | tr -- "$fs" '?' )
+		printf '%s\n' "${prefix1}${name}${fs}${status}${fs}${homedir}"
+	else
+		printf '%s\n' "${prefix1}${name}${fs}${status}"
+	fi
+
+	if [ "$rc" -eq 0 ]
+	then
+		child2=''
+		for child1 in $( childs_get_list )
+		do
+			if [ -n "$child2" ]
+			then
+				_tree_recurse -- "$tree_lvl" "$vm_selected" "$child2" \
+					"${prefix2}${draw_vr}${draw_h} " "${prefix2}${draw_v}  " \
+					|| rc=1
+			fi
+			child2=$child1
+		done
+		if [ -n "$child2" ]
+		then
+			_tree_recurse -- "$tree_lvl" "$vm_selected" "$child2" \
+				"${prefix2}${draw_r}${draw_h} " "${prefix2}   " || rc=1
+		fi
+	fi
+
+	return "$rc"
+)
+
+
+################################################################################
+# Parse parameters
+################################################################################
+
+include_globalconf || exit 1
+
+OPTIND=1
+while getopts "abhilqstvy" param
+do
+	case "$param" in
+		'a') # ASCII mode.
+			output_ascii='yes'
+			;;
+
+		'b') # Display only storage backend.
+			action="${action}b"
+			;;
+
+		'h') # Show usage information.
+			printf '%s\n' "$usage"
+			exit 0
+			;;
+
+		'i') # Display only general information.
+			action="${action}i"
+			;;
+
+		'l') # Long output.
+			output_long='yes'
+			;;
+
+		'q') # Decrease verbosity.
+			if [ "${cfg_ui_verbosity:?}" -gt 0 ]
+			then
+				cfg_ui_verbosity=$(( cfg_ui_verbosity - 1 )) || exit 1
+			fi
+			;;
+
+		's') # Display only settings.
+			action="${action}s"
+			;;
+
+		't') # Display only VM tree.
+			action="${action}t"
+			;;
+
+		'v') # Increase verbosity.
+			cfg_ui_verbosity=$(( ${cfg_ui_verbosity:?} + 1 )) || exit 1
+			;;
+
+		'y') # Never ask any confirmation, always assume `y' as answer.
+			settings_override 'cfg_ui_assumeyes' 'yes'
+			;;
+
+		*)
+			printf 'Unexpected argument: %s\n' "$1" >&2
+			exit 2
+			;;
+	esac
+done
+shift $(( OPTIND - 1 ))
+
+settings_set 'cfg_ui_verbosity' "${cfg_ui_verbosity:?}"
+if [ "${cfg_ui_verbosity:?}" -ge 5 ]
+then
+	set -x
+fi
+
+if [ -z "$action" ]
+then
+	action='itsb'
+fi
+
+if [ "$#" -eq 0 ]
+then
+	set -- "."
+fi
+
+
+################################################################################
+# Main
+################################################################################
+
+rc=0
+
+for p
+do
+	(
+		cli_trace 3 "Loading '${p}'..."
+		if ! settings_loadvm -- "$p"
+		then
+			echo "Check if '${p}' is a virtual machine home directory." >&2
+			exit 1
+		fi
+
+		printf '%*s\n' "$banner_size" '' | tr ' ' '='
+		printf '= %s\n' "$vm_home"
+		printf '%*s\n\n' "$banner_size" '' | tr ' ' '='
+
+		rc=0
+		set -- "-${action}"
+		OPTIND=1
+		while getopts 'bist' act
+		do
+			case "$act" in
+				'b') _backend || rc=1 ;;
+				'i') _info || rc=1 ;;
+				's') _settings || rc=1 ;;
+				't') _tree || rc=1 ;;
+				*)
+					echo "ERROR (BUG): vminfo: Invalid action: '${act}'." >&2
+					rc=1
+					;;
+			esac
+		done
+
+		exit "$rc"
+	) || rc=1
+done
+
+exit "$rc"
+
+################################################################################
+### /usr/local/bin/vminfo END
+################################################################################

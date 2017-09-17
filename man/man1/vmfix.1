@@ -1,0 +1,360 @@
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmfix.1.gz BEGIN
+.\" ############################################################################
+.\"
+.\" Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+.\"
+.\" This file is part of vmtools.
+.\"
+.\" vmtools is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
+.\"
+.\" ############################################################################
+.
+.Dd June 3, 2017
+.Dt VMFIX 1
+.Os vmtools
+.
+.
+.Sh NAME
+.
+.Nm vmfix
+.Nd detect and fix virtual machines issues
+.
+.
+.Sh SYNOPSIS
+.
+.Nm
+.Op Fl Aabdhlnpqrsv
+.Op Ar directory ...
+.
+.
+.Sh DESCRIPTION
+.
+Detect and fix virtual machines issues, also provide a few cleaning
+functionalities.
+.Pp
+To avoid wrong manipulation,
+.Nm
+has no implicit default action: it is mandatory to select at least one test
+flag or use either
+.Fl a
+or
+.Fl A .
+.Pp
+If no directory is provided, the current working directory is assumed.
+.
+.
+.Sh OPTIONS
+.
+.Ss Tests selection options
+.
+Test selection options order has no impact on the tests execution order.
+.Pp
+The tests selection options are as follows:
+.Bl -tag -width Ds
+.It Fl b
+Delete temporary bakup directories.
+.Pp
+Especially when manipulating large files (like disk image files),
+.Xr vmtools 7
+commands try to create temporary directories near to (and hopefully on the same
+partition than) the virtual machine being manipulated instead of using system's
+default path.
+.Pp
+These directories should normally be automatically deleted, even after a normal
+error (in such case the directory content is automatically used for the
+rollback process).
+However, in case of a crash or a any other severe issue it is possible for some
+temporary backup directories to remain.
+.
+.It Fl d
+Delete work files (cosmetic).
+.Pp
+When a virtual machine is started, it generates a few files which won't be
+deleted upon its exit (by default a PID file and a socket file allowing to
+access the Qemu monitor shell).
+.Pp
+The presence of these files is normal and do not cause any issue (except some
+warning message in applications like archival utilities related to the
+presence of socket files which, obviously, cannot be archived).
+This test allows to delete them to take the virtual machine home
+directories back to a clean and pristine state.
+.
+.It Fl l
+Delete lock files.
+.Pp
+.Xr vmtools 7
+commands rely on lock files to prevent concurrent access and modification of
+a virtual machine.
+Normally these are transient files which should be deleted as soon as the
+associated operation ends, let alone when the command itself exits.
+.Pp
+In case of a crash or any other severe issue, unused lock files may remain in
+a virtual machine home directory, making it impossible to start or otherwise
+modify the associated virtual machine.
+.
+.It Fl p
+Fix parent-child link issues.
+.Pp
+Several
+.Xr vmtool 7
+commands need to keep track of the parent and childs (forked) virtual machines.
+A double linked chaining is implemented between a parent and each of its childs.
+This link is properly updated when using commands such as
+.Xr vmmv 1
+or
+.Xr vmrm 1
+to manipulate virtual machine home directories.
+.Pp
+This link will may be broken typically when a virtual machine has been moved,
+renamed or deleted without using the aforementioned commands.
+This test will detect such incoherency and attempt to solve them.
+.Pp
+In order to fully solve a broken link betwen a parent and its child, it may be
+necessary to execute this test against each one of them (a recursive execution
+using
+.Fl r
+may be also fine).
+.Pp
+See
+.Sx CAVEATS
+below for potential limitations. You may want to use
+.Xr vminfo 1
+to ensure that the fixed virtual machines tree matches your expectation.
+.
+.It Fl s
+Fix storage image files path issues.
+.Pp
+This test is very similar to the parent-child test (see
+.Fl p ) ,
+except that it focuses on the storage image files path.
+This test checks the path pointing to the storage image file and also, if
+applicable, the QCow2 backing file path.
+Both of these paths are updated notably when moving a renaming a virtual
+machine using the
+.Xr vmmv 1 ,
+however they will become invalid if for instance the system's
+.Xr mv 1
+command is used instead.
+.Pp
+See
+.Sx CAVEATS
+below for potential limitations.
+.El
+.
+.Ss Other options
+.
+The other options are as follows:
+.Bl -tag -width Ds
+.It Fl A
+Execute all tests, including the cosmetic ones (equivalent to
+.Fl bdlps ) .
+.
+.It Fl a
+Execute all defects tests (equivalent to
+.Fl blps ) .
+.
+.It Fl h
+Show usage information summary then exit.
+.
+.It Fl n
+Do not modify anything, only check for issues.
+.
+.It Fl q
+Decrease verbosity.
+Add several
+.Fl q
+options to decrease verbosity even more
+.Fl ( qq
+by default to get minimal output).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl v
+to increase the verbosity level.
+.
+.It Fl r
+Enable recursive mode.
+.
+.It Fl v
+Increase verbosity.
+Add several
+.Fl v
+options to increase verbosity even more
+.Fl ( vvv
+by default to get the most verbose output, including debugging messages).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl q
+to decrease the verbosity level.
+.El
+.
+.
+.Sh ENVIRONMENT
+.
+.Bl -tag -width Ds
+.It Ev TMPDIR
+Default location to store temporary files, by default
+.Pa /tmp .
+.
+.It Ev XDG_CONFIG_HOME
+Location of user's configuration files, by default
+.Pa ~/.config .
+.El
+.
+.
+.Sh FILES
+.
+.Bl -tag -width Ds
+.It Pa /usr/local/lib/vmtools
+Libraries shared by the vmtools project utilities.
+.It Pa /usr/local/share/vmtools/vmtools.conf
+Virtual machine default settings, see
+.Xr vmtools.conf 5 .
+.El
+.Pp
+Moreover, the content of
+.Pa /usr/local/share/vmtools
+can be overridden in the following locations (in the order of precedence):
+.Bl -tag -width Ds
+.It ~/.config/vmtools
+User overrides (if
+.Cm cfg_include_userhome
+is set to
+.Dq yes ) .
+.It /etc/vmtools
+System-wide overrides.
+.El
+.
+.
+.Sh EXIT STATUS
+.
+.Bl -tag -compact -width Ds
+.
+.It 0
+No issue has been found.
+.It 1
+An internal error occurred.
+.It 2
+Wrong usage.
+.It 3
+At least one of the selected tests has found an issue.
+.El
+.
+.
+.Sh EXAMPLES
+.
+.Bl -inset
+.It Example 1:
+Force to remove a lock preventing to start the current virtual machine:
+.Pp
+.Bd -literal -offset indent
+.Ic cd ~/myVM
+.Ic vmfix -l
+.Ed
+.Pp
+.It Example 2:
+Check that a virtual machine tree has no issue (simple reporting, the
+.Fl n
+flag prevents any modification):
+.Pp
+.Dl Ic vmfix -ran /path/to/virtual_machines
+.Pp
+.It Example 3:
+Quickly remove all remaining lock files and temporary directories from a
+virtual machine tree (useful as a system startup script, cleaning-up the
+environment before any virtual machine gets started):
+.Pp
+.Dl Ic vmfix -rtl /path/to/virtual_machines
+.Pp
+.El
+.
+.
+.Sh SEE ALSO
+.
+.Xr vminfo 1 ,
+.Xr vmmv 1 ,
+.Xr vmrm 1 ,
+.Xr vmtools 7
+.
+.
+.Sh CAVEATS
+.
+.Bl -bullet
+.It
+After having found and solved one or several issues, it is recommended to run
+the
+.Nm
+command another time in order to ensure that there is no remaining issue.
+.Pp
+The command should produce no output and have a return code of 0 if there is no
+remaining issue.
+.It
+Some tests require to lock the targeted virtual machine.
+These tests will be ignored and a warning message dispayed if a locking issue
+has been detected or of some virtual machines are currently running.
+.It
+The
+.Fl p
+(parent-child issues) and
+.Fl s
+(storage path issues) only attempt to fix situations considered as
+non-ambiguous.
+Facing more complex situations, they will bet on the safe side and limit
+themselves to reporting the issues found but not apply any fix.
+.Pp
+In such conditions, a manual fix may be required (always do a backup before
+doing any manual modification!):
+.Bl -dash
+.It
+The parent and storage image paths are defined in the virtual machine settings
+file.
+The file name is defined by the
+.Cm cfg_file_vmsettings
+setting and is
+.Pa vm.settings
+by default.
+.It
+The childs paths are defined in the childs database file.
+The file name is defined by the
+.Cm cfg_file_childs
+setting and is
+.Pa childs.lst
+by default.
+.It
+QCow2 files backing chain path is stored directly in the QCow2 binary file.
+It can be modified using the following command:
+.Pp
+.Dl Ic qemu-img rebase -u -b Pa backing_file image_file
+.Pp
+Check
+.Xr qemu-img 1
+for more information.
+.El
+.El
+.
+.
+.Sh REPORTING BUGS
+.
+Please send bug reports to the
+.Lk http://github.com/WhiteWinterWolf/vmtools/issues "vmtools issues page" .
+.
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmfix.1.gz END
+.\" ############################################################################

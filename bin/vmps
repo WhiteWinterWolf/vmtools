@@ -1,0 +1,476 @@
+#! /bin/sh -efu
+################################################################################
+### /usr/local/bin/vmps BEGIN
+################################################################################
+#
+# Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+#
+# This file is part of vmtools.
+#
+# vmtools is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+################################################################################
+
+usage="Report information on currently running virtual machines.
+
+Usage:
+  vmps [-hqrv] [-n | [-o vmps_fields] [-s vmps_fields]] [-a]
+  vmps [-hqrv] [-n | [-o vmps_fields] [-s vmps_fields]] -d vmhome_dir ...
+  vmps [-hqrv] [-n | [-o vmps_fields] [-s vmps_fields]] -p pid ...
+  vmps [-hqrv] [-n | [-o vmps_fields] [-s vmps_fields]] -u user ...
+
+Virtual machines selection options:
+  -a    Select all.
+  -d    Select by virtual machine home directory.
+  -p    Select by PID.
+  -u    Select by user.
+
+The default is to select virtual machines owned by the current user.
+
+Other options:
+  -h    Show usage information.
+  -n    Do not produce any output.
+  -o vmps_fields
+        Select the columns to display.
+  -q    Decrease verbosity.
+  -r    Raw list (do not display column headers).
+  -s vmps_fields
+        Select the sorting criteria.
+  -v    Increase verbosity.
+
+vmps fields:
+  c     CPU activity (%).
+  d     Display.
+  e     Qemu command-line.
+  h     Virtual machine home directory.
+  m     Virtual memory allocated (KB).
+  n     Virtual machine name.
+  p     PID.
+  q     Qemu monitor socket path.
+  u     User.
+
+The default column display selection is '-o pnd'.
+Output is not sorted by default.
+Use an uppercase vmps field as sort criteria to reverse the sort order.
+
+Exit code:
+  0     Success: at least one of the selected virtual machines is running.
+  1     An internal error occured.
+  2     Wrong usage.
+  3     None of the selected virtual machines is running.
+"
+
+# TODO: Any way to get disk I/O activity?
+
+# TODO: Any way to make the 'pcpu' field from `ps' more reactive?
+
+
+################################################################################
+# Global variables
+################################################################################
+
+# Available column identifiers.
+cols_all='cdehmnpqu'
+
+# Selected columns for output.
+cols_output=''
+
+# Selected columns for sorting.
+cols_sort=''
+
+# Field separator (037 = ASCII "Unit Separator" character).
+fs=$( printf '\037' )
+
+# If "yes", `vmps' will not produce any output.
+nooutput='no'
+
+# Process selection criteria (one letter among 'a', 'd', 'p', 'u').
+proc_selec=''
+
+# If 'yes', do not display the table headers.
+raw='no'
+
+
+################################################################################
+# Functions
+################################################################################
+
+# Loading shared libs (loading them all is faster than nitpicking).
+for f in $( find '/usr/local/lib/vmtools' -name '*.inc.sh' )
+do
+	. "$f" || exit 1
+done
+
+###
+# _add_field column_id resultfile
+#
+_add_field() {
+	local 'column_id' 'resultfile'
+	[ "${1-}" = '--' ] && shift
+	column_id=${1:?"ERROR (BUG): _add_field: Missing parameter."}
+	resultfile=${2:?"ERROR (BUG): _add_field: Missing parameter."}
+
+	case "$column_id" in
+		'c') value=$( vmps_get_pcpu ) ;;
+		'd') value=$( vmps_get_display ) ;;
+		'e') value=$( vmps_get_cmdline ) ;;
+		'h') value=$( vmps_get_homedir ) ;;
+		'm') value=$( vmps_get_vsz ) ;;
+		'n') value=$( vmps_get_name ) ;;
+		'p') value=$( vmps_get_pid ) ;;
+		'q') value=$( vmps_get_monitorfile ) ;;
+		'u') value=$( vmps_get_user ) ;;
+
+		*)
+			# Column identifiers haven't been checked yet, so this may be a
+			# user's wrong usage mistake.
+			echo "ERROR: Invalid column identifier: '$col'." >&2
+			return 2
+			;;
+	esac
+	# There must be no empty field to avoid issues with `column' and no field
+	# separator character.
+	value=$( printf '%s' "$value" | sed -e 's/^$/ /' \
+		-e "s/$( str_escape_sed -- "$fs" )/?/g" )
+
+	if [ "$resultfile" = '-' ]
+	then
+		printf '%s\n' "$value"
+	else
+		if [ -s "$resultfile" ]
+		then
+			value=$( printf '%s\n' "$value" \
+				| paste -d "$fs" -- "$resultfile" '-' )
+		fi
+
+		# `column' requires the file to end with a EOL character.
+		printf '%s\n' "$value" >"$resultfile" || return 1
+	fi
+}
+
+###
+# _store_vmps outfile [vmps_args...]
+#
+_store_vmps() {
+	local 'col' 'outfile' 'value'
+	outfile=${1:?"ERROR (BUG): _store_vmps: Missing parameter."}
+	: >"$outfile"
+	shift
+
+	vmps_init "$@" || return 1
+	if vmps_isempty
+	then
+		return 0
+	fi
+
+	set -- "-${cols_output}"
+	OPTIND=1
+	while getopts "$cols_all" 'col'
+	do
+		_add_field -- "$col" "$outfile" || return 1
+	done
+}
+
+
+################################################################################
+# Parse parameters
+################################################################################
+
+include_globalconf || exit 1
+
+OPTIND=1
+while getopts "adhno:pqrs:uv" param
+do
+	case "$param" in
+		'a'|'d'|'p'|'u') # Processes selection.
+			if [ -n "$proc_selec" ]
+			then
+				echo "ERROR: You can only use a single process selection" \
+					"method." >&2
+				exit 2
+			fi
+			proc_selec=$param
+			;;
+
+		'h') # Show usage information.
+			printf '%s\n' "$usage"
+			exit 0
+			;;
+
+		'n') # Do not produce any output.
+			if [ -n "$cols_output" -o -n "$cols_sort" ]
+			then
+				echo "ERROR: '-n' cannot be used with '-o' or '-s'." >&2
+				exit 2
+			fi
+			nooutput='yes'
+			;;
+
+		'o') # Output columns selection.
+			if [ "$nooutput" = 'yes' ]
+			then
+				echo "ERROR: '-o' cannot be used with '-n'." >&2
+				exit 2
+			fi
+			if [ -n "$cols_output" ]
+			then
+				echo "ERROR: You cannot provide several '-o' options." >&2
+				exit 2
+			fi
+			cols_output=$OPTARG
+			;;
+
+		'q') # Decrease verbosity.
+			if [ "${cfg_ui_verbosity:?}" -gt 0 ]
+			then
+				cfg_ui_verbosity=$(( cfg_ui_verbosity - 1 )) || exit 1
+			fi
+			;;
+
+		'r') # Raw list (no headers).
+			raw='yes'
+			;;
+
+		's') # Sort key selection.
+			if [ "$nooutput" = 'yes' ]
+			then
+				echo "ERROR: '-s' cannot be used with '-n'." >&2
+				exit 2
+			fi
+			if [ -n "$cols_sort" ]
+			then
+				echo "ERROR: You cannot provide several '-s' options." >&2
+				exit 2
+			fi
+			cols_sort=$OPTARG
+			;;
+
+		'v') # Increase verbosity.
+			cfg_ui_verbosity=$(( ${cfg_ui_verbosity:?} + 1 )) || exit 1
+			;;
+
+		*)
+			printf 'Unexpected argument: %s\n' "$1" >&2
+			exit 2
+			;;
+	esac
+done
+shift $(( OPTIND - 1 ))
+
+settings_set 'cfg_ui_verbosity' "${cfg_ui_verbosity:?}"
+if [ "${cfg_ui_verbosity:?}" -ge 5 ]
+then
+	set -x
+fi
+
+if [ "$nooutput" = 'yes' ]
+then
+	# Output has been disabled by the user, only fetch the bare minimum.
+	cols_output='p'
+elif [ -z "$cols_output" ]
+then
+	# Columns selected for the default output: PID, VM name, VM display mode.
+	cols_output='pnd'
+fi
+
+if [ $# -ne 0 -a \( -z "$proc_selec" -o "$proc_selec" = 'a' \) ]
+then
+	echo "ERROR: Too many parameters." >&2
+	exit 2
+elif [ $# -eq 0 -a \( ! -z "$proc_selec" -a "$proc_selec" != 'a' \) ]
+then
+	echo "ERROR: Argument missing." >&2
+	exit 2
+fi
+
+
+################################################################################
+# Main
+################################################################################
+
+### Build the process list ###
+
+if [ "$nooutput" = 'yes' ]
+then
+	result=''
+	case "$proc_selec" in
+		'') # Default: processes from the current user.
+			result=$( _store_vmps '-' -u "${LOGNAME:?}" ) || exit 1
+			;;
+		'a') # All processes.
+			result=$( _store_vmps '-' ) || exit 1
+			;;
+		'd'|'p'|'u') # Cycle through home dirs / PID / users.
+			for arg
+			do
+				result=$( _store_vmps '-' "-${proc_selec}" "$arg" ) || exit 1
+				if [ -n "$result" ]
+				then
+					# At least one VM is running, that's all we need to know.
+					break
+				fi
+			done
+			;;
+		*)
+			echo "ERRROR (BUG): Invalid value for \$proc_selec:" \
+				"'${proc_selec}'." >&2
+			exit 1
+			;;
+	esac
+
+	# No output to process, immediately exit.
+	exit $( [ -n "$result" ] && printf '0' || printf '3' )
+else
+	resultfile=$( mktemp "${TMPDIR:-"/tmp"}/vmps.XXXXXXXXXX" ) || exit 1
+	cleanup_add rm -f -- "$resultfile"
+
+	case "$proc_selec" in
+		'') # Default: processes from the current user.
+			_store_vmps "$resultfile" -u "${LOGNAME:?}" || exit 1
+			;;
+		'a') # All processes.
+			_store_vmps "$resultfile" || exit 1
+			;;
+		'd'|'p'|'u') # Cycle through home dirs / PID / users.
+			concatfile=$( mktemp "${TMPDIR:-"/tmp"}/vmps-concat.XXXXXXXXXX" ) \
+				|| exit 1
+			cleanup_add rm -f -- "$concatfile"
+			for arg
+			do
+				_store_vmps "$concatfile" "-${proc_selec}" "$arg" || exit 1
+				cat -- "$concatfile" >>"$resultfile" || exit 1
+			done
+			rm -- "$concatfile" || exit 1
+			cleanup_remove rm -f -- "$concatfile" || exit 1
+			;;
+		*)
+			echo "ERRROR (BUG): Invalid value for \$proc_selec:" \
+				"'${proc_selec}'." >&2
+			exit 1
+			;;
+	esac
+
+	if [ ! -s "$resultfile" ]
+	then
+		# No VM has been found: do not output anything and a use a specific exit
+		# code to be script-friendly.
+		exit 3
+	fi
+fi
+
+### Sort the process list ###
+
+if [ -n "$cols_sort" ]
+then
+	cols_all_case="${cols_all}$( str_toupper -- "$cols_all" )"
+	set -- "-${cols_sort}"
+	fields_count=${#cols_output}
+	sort_k=''
+	OPTIND=1
+	while getopts "$cols_all_case" 'col'
+	do
+		# Determine sort order.
+		case "$col" in
+			[[:upper:]])
+				# Sort in reverse order.
+				rev_flag='r'
+				col=$( printf '%s' "$col" | tr '[:upper:]' '[:lower:]' )
+				;;
+			*)
+				# Sort in ascending order.
+				rev_flag=''
+				;;
+		esac
+
+		# Determine field position.
+		case "$cols_output" in
+			*"$col"*)
+				field=$( expr "$cols_output" : ".*${col}" )
+				;;
+			*)
+				_add_field -- "$col" "$resultfile" || exit $?
+				fields_count=$(( fields_count + 1 ))
+				field=$fields_count
+				;;
+		esac
+
+		# Generate `sort' parameter.
+		alpha='dehnqu'
+		num='cmp'
+		if [ "$alpha" != "${alpha#*${col}}" ]
+		then
+			str_list_add 'sort_k' '-k' "${field},${field}${rev_flag}"
+		elif [ "$num" != "${num#*${col}}" ]
+		then
+			str_list_add 'sort_k' '-k' "${field},${field}${rev_flag}n"
+		else
+			echo "WARNING (BUG): Undefined type for field '$col'." >&2
+			str_list_add 'sort_k' '-k' "${field},${field}"
+		fi
+	done
+
+	# Generate the sorted result file.
+	value=$( LC_ALL=C sort -t "$fs" $sort_k -- "$resultfile" ) || exit 1
+	if [ "$fields_count" -eq "${#cols_output}" ]
+	then
+		# `column' requires the file to end with a EOL character.
+		printf '%s\n' "$value" >"$resultfile" || exit 1
+	else
+		# `column' requires the file to end with a EOL character.
+		printf '%s\n' "$value" | cut -d "$fs" -f "1-${#cols_output}" \
+			>"$resultfile" || exit 1
+	fi
+fi
+
+### Display the result ###
+
+if [ "$raw" = 'yes' ]
+then
+	column -s "$fs" -t "$resultfile"
+else
+	set -- "-${cols_output}"
+	header=''
+	OPTIND=1
+	while getopts "$cols_all" 'col'
+	do
+		case "$col" in
+			'c') header="${header:+"${header}${fs}"}CPU %" ;;
+			'd') header="${header:+"${header}${fs}"}DISPLAY" ;;
+			'e') header="${header:+"${header}${fs}"}COMMAND-LINE" ;;
+			'h') header="${header:+"${header}${fs}"}HOME" ;;
+			'm') header="${header:+"${header}${fs}"}MEM KB" ;;
+			'n') header="${header:+"${header}${fs}"}NAME" ;;
+			'p') header="${header:+"${header}${fs}"}PID" ;;
+			'q') header="${header:+"${header}${fs}"}QMP SOCKET" ;;
+			'u') header="${header:+"${header}${fs}"}USER" ;;
+			*)
+				echo "WARNING (BUG): Undefined header for field '$col'." >&2
+				header="${header:+"${header}${fs}"}?"
+				;;
+		esac
+	done
+
+	{ printf '%s\n' "$header"; cat -- "$resultfile"; } | column -s "$fs" -t
+fi
+
+### Cleanup ###
+
+if rm -- "$resultfile"
+then
+	cleanup_end
+fi
+
+###############################################################################
+### /usr/local/bin/vmps END
+################################################################################

@@ -1,0 +1,147 @@
+#! /bin/sh -efu
+################################################################################
+### /usr/local/bin/vmcreate BEGIN
+################################################################################
+#
+# Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+#
+# This file is part of vmtools.
+#
+# vmtools is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+################################################################################
+
+usage="Create and start Qemu virtual machines.
+
+Usage:
+  vmcreate [-bhinqrsvyz] [-C storage] [-c storage] [-D storage] [-d storage]
+           [-o setting=value] [-t template_name] vmhome_path...
+
+Options:
+  -b    Enable BIOS' boot media selection menu.
+  -C path
+        Like '-c', but also set boot order to boot from the HDD.
+  -c path
+        Add a hard-disk drive image file.
+  -D path
+        Like '-d', but also set boot order to boot from CD-ROM.
+  -d path
+        Add a CD-ROM image file.
+  -h    Show usage information.
+  -i    Interactive mode (Qemu monitor shell + final confirmation).
+  -n    Do not start the virtual machine, only create it.
+  -o setting=value
+        Override a setting.
+  -q    Decrease verbosity.
+  -r    Read-only access to all storage image files.
+  -s    Snapshot access to all storage image files (non-persistent mode).
+  -t template_name
+        Apply a template.
+  -v    Increase verbosity.
+  -y    Do not ask any confirmation, assume 'yes'.
+  -z    Generate compressed disk images.
+"
+
+
+################################################################################
+# Functions
+################################################################################
+
+# Loading shared libs (loading them all is faster than nitpicking).
+for f in $( find '/usr/local/lib/vmtools' -name '*.inc.sh' )
+do
+	. "$f" || exit 1
+done
+
+
+################################################################################
+# Parse parameters
+################################################################################
+
+include_globalconf || exit 1
+
+vmup_parseargs "$@" || exit $?
+shift $(( OPTIND - 1 ))
+
+if [ $# -eq 0 ]
+then
+	printf 'ERROR: Name of the virtual machine to create missing.\n' >&2
+	exit 2
+fi
+
+
+################################################################################
+# Main
+################################################################################
+
+rc=0
+
+for p
+do
+	# In interactive mode, loop as long as the user isn't satisfied with the
+	# created VM.
+	rc_cycle=3
+	while [ "$rc_cycle" -eq 3 ]
+	do
+		# Spanning a new process has two advantages:
+		# - Better isolation preventing any interference when launching several
+		#   VMs.
+		# - Immediate deletion of temporary files and locks by `trap' upon
+		#   error.
+		(
+			if ! homedir_init -- "$p"
+			then
+				echo "${p}: ERROR: Failed to initialize the VM." >&2
+				exit 1
+			fi
+
+			if ! vmup_inputsettings
+			then
+				echo "${vm_name}: ERROR: Failed to configure the VM." >&2
+				exit 1
+			fi
+
+			if ! vmup_runqemu
+			then
+				echo "${vm_name}: ERROR: Failed to start the VM." >&2
+				exit 1
+			fi
+
+			if test "$vm_qemu_daemonize" != 'yes' && cli_confirm \
+				"Save this virtual machine? Answering no will recreate it. [yN] "
+			then
+				# The cleanup process takes care of the rollback.
+				exit 3
+			fi
+
+			settings_save "initial creation" || exit 1
+
+			lock_release -- "${vm_home:?}"
+			cleanup_end
+			cli_trace 1 "${vm_name}: VM created."
+		)
+		rc_cycle=$?
+	done
+
+	if [ "$rc_cycle" -ne 0 ]
+	then
+		rc=$rc_cycle
+	fi
+done
+
+exit "$rc"
+
+################################################################################
+### /usr/local/bin/vmcreate END
+################################################################################

@@ -1,0 +1,297 @@
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmdown.1.gz BEGIN
+.\" ############################################################################
+.\"
+.\" Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+.\"
+.\" This file is part of vmtools.
+.\"
+.\" vmtools is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
+.\"
+.\" ############################################################################
+.
+.Dd June 3, 2017
+.Dt VMDOWN 1
+.Os vmtools
+.
+.
+.Sh NAME
+.
+.Nm vmdown
+.Nd shutdown a Qemu virtual machine
+.
+.
+.Sh SYNOPSIS
+.
+.Nm
+.Op Fl kstw
+.Op Ar vmhome_path ...
+.
+.Nm
+.Op Fl kstw
+.Fl a
+.
+.Nm
+.Op Fl kstw
+.Fl p Ar pid ...
+.
+.
+.Sh DESCRIPTION
+.
+Shutdown selected virtual machines using the selected method.
+.Pp
+See
+.Sx OPTIONS
+below for more details on the virtual machines and shutdown methods selection.
+.
+.
+.Sh OPTIONS
+.
+.Ss Virtual machines selection options
+.
+The virtual machines selection options are as follows:
+.
+.Bl -tag -width Ds
+.
+.It Fl a
+Shutdown all running virtual machines.
+.It Fl p Ar pid ...
+Shutdown the virtual machine running with the PID
+.Ar pid .
+.El
+.Pp
+The default is to shutdown the virtual machine designated by the home directory
+.Ar vmhome_path .
+If no home directory is provided, the current working directory is used.
+.
+.Ss Shutdown methods selection options
+.
+The shutdown methods selection options are as follows:
+.
+.Bl -tag -width Ds
+.It Fl k
+Kill the virtual machine process (send a SIGKILL to the Qemu process).
+.br
+This is the most brutal way to shutdown a virtual machine.
+The host operating system immediatly terminates the Qemu hypervisor process.
+It should only be used against stuck Qemu hypervisor processes.
+.It Fl s
+Send an ACPI shutdown request to the virtual machine guest.
+.br
+This is cleanest way to shutdown a virtual machine as it allows the guest
+operating system and the application it runs to gracefully close themselves.
+However, the guest operating system must be able to handle ACPI events for this
+method to have any effect.
+In particular, this won't work against legacy or stuck guest operating systems.
+.It Fl t
+Terminate the virtual machine process (send a SIGTERM to the Qemu process).
+.br
+The Qemu hypervisor process immediatly terminates the guest operating system,
+but will still ensure that from the hypervisor side all pending data gets
+correclly flushed and all opened resources gets closed correctly.
+.br
+This shutdown method however leaves no way for the guest's operating system and
+application to save their data, it should be used only against either legacy
+and stucked guests which do not respond to ACPI shutdown requests, or
+against stateless guests (vitual machines in read-only or snapshot mode).
+.El
+.Pp
+The default is to try every shutdown method (equivalent to
+.Fl kst ) .
+.Pp
+When several methods are selected,
+.Fl w
+is assumed and the methods are always processed in the following order,
+independantly of the flags order in the command-line:
+.
+.Bl -enum -width Ds -offset indent
+.It
+If
+.Fl s
+is enabled, send an ACPI shutdown request to the guests of all selected
+processes.
+.It
+If
+.Fl t
+is enabled, send a SIGTERM signal to the selected processes still running.
+.It
+If
+.Fl k
+is enabled, send a SIGKILL signal to the selected processes still running.
+.El
+.
+.Ss Other options
+.
+The other options are as follows:
+.
+.Bl -tag -width Ds
+.It Fl h
+Show usage information summary then exit.
+.
+.It Fl q
+Decrease verbosity.
+Add several
+.Fl q
+options to decrease verbosity even more
+.Fl ( qq
+by default to get minimal output).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl v
+to increase the verbosity level.
+.
+.It Fl v
+Increase verbosity.
+Add several
+.Fl v
+options to increase verbosity even more
+.Fl ( vvv
+by default to get the most verbose output, including debugging messages).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl q
+to decrease the verbosity level.
+.
+.It Fl w
+Wait for the virtual machine to terminate before proceeding.
+The wait ends when all selected virtual machines have stopped or after the
+.Cm vm_qemu_shutdown_timeout
+timer expired (20 seconds by default, see
+.Xr vmtools.conf 5 ) ,
+whichever happens first.
+.Pp
+This flag is automatically enabled when several shutdown methods are selected.
+In this case
+.Nm
+waits between each selected shutdown method and after the last one.
+.El
+.
+.
+.Sh ENVIRONMENT
+.
+.Bl -tag -width Ds
+.It Ev TMPDIR
+Default location to store temporary files, by default
+.Pa /tmp .
+.
+.It Ev XDG_CONFIG_HOME
+Location of user's configuration files, by default
+.Pa ~/.config .
+.El
+.
+.
+.Sh FILES
+.
+.Bl -tag -width Ds
+.It Pa /usr/local/lib/vmtools
+Libraries shared by the vmtools project utilities.
+.It Pa /usr/local/share/vmtools/vmtools.conf
+Virtual machine default settings, see
+.Xr vmtools.conf 5 .
+.El
+.Pp
+Moreover, the content of
+.Pa /usr/local/share/vmtools
+can be overridden in the following locations (in the order of precedence):
+.Bl -tag -width Ds
+.It ~/.config/vmtools
+User overrides (if
+.Cm cfg_include_userhome
+is set to
+.Dq yes ) .
+.It /etc/vmtools
+System-wide overrides.
+.El
+.
+.
+.Sh EXIT STATUS
+.
+.Bl -tag -compact -width Ds
+.
+.It 0
+Success: all selected virtual machines have been shut down.
+.It 1
+An error occurred, more information is available on the error output.
+.It 2
+Wrong usage, nothing has been done.
+.It 3
+Partial success: some virtual machines may have been shutdown.
+.El
+.
+.
+.Sh EXAMPLES
+.
+.Bl -inset
+.It Example 1:
+Shutdown the current virtual machine:
+.Pp
+.Bd -literal -offset indent
+.Ic cd ~/my-vm
+.Ic vmdown
+.Ed
+.Pp
+.It Example 2:
+Shutdown all running virtual machines (particularly useful in a
+system shutdown script):
+.Pp
+.Dl Ic vmdown -a
+.Pp
+.It Example 3:
+Quickly stop the virtual machine bearing a certain PID:
+.Pp
+.Dl Ic vmdown -tk -p 1234
+.Pp
+.El
+.
+.
+.Sh SEE ALSO
+.
+.Xr vmps 1 ,
+.Xr vmup 1 ,
+.Xr vmtools 7
+.
+.
+.Sh CAVEATS
+.
+The ACPI-based guest shutdown requires
+.Xr socat 1
+to be available on the host system and the virtual machine to have a monitor
+file (the virtual machine typically needs a home directory for this).
+This functionality will not work and will raise an appropriate warning message
+if these prerequisites are not fulfilled (witout impact on any other shutdown
+method selected).
+.Pp
+This limitation is not very damaging as it mostly affects HDD-less guests
+started from live-CDs, which usually do not mind being brutally shut down
+anyway.
+.Pp
+This limitation is caused by Qemu.
+A feature request has been opened
+.Lk https://bugs.launchpad.net/qemu/+bug/1217339 "upstream" .
+.
+.
+.Sh REPORTING BUGS
+.
+Please send bug reports to the
+.Lk http://github.com/WhiteWinterWolf/vmtools/issues "vmtools issues page" .
+.
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmdown.1.gz END
+.\" ############################################################################

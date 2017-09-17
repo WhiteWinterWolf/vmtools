@@ -1,0 +1,121 @@
+#! /bin/sh -efu
+################################################################################
+### /usr/local/bin/vmfork BEGIN
+################################################################################
+#
+# Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+#
+# This file is part of vmtools.
+#
+# vmtools is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+################################################################################
+
+usage="Generate virtual machine forks.
+
+Usage:
+  vmfork [-hkqRrsvyz] [-M module_name] [-m module_name] [-o setting=value]
+         [-a [-n]| -c | -f] source destination...
+
+Copy mode selection options:
+  -a    Generate an autonomous copy (no parent link).
+  -c    Generate a standard copy of the source virtual machine.
+  -f    Generate a fork from the source virtual machine.
+
+The default action is '-f'.
+
+Other options:
+  -h    Show this help message.
+  -k    Keep parent's unique properties.
+  -M module_name
+        Disable a clone module.
+  -m module_name
+        Enable a clone module.
+  -n    Do not modify the source during an autonomous copy.
+  -o setting=value
+        Override a setting.
+  -q    Decrease verbosity.
+  -R    Recurse over child virtual machines.
+  -r    Recurse over subdirectories.
+  -s    Snapshot mode.
+  -v    Increase verbosity.
+  -y    Do not ask any confirmation, assume 'yes'.
+  -z    Generate compressed disk images.
+"
+
+
+################################################################################
+# Global variables
+################################################################################
+
+# Fork source and destination
+src=''
+dst=''
+
+
+################################################################################
+# Functions
+################################################################################
+
+# Loading shared libs (loading them all is faster than nitpicking).
+for f in $( find '/usr/local/lib/vmtools' -name '*.inc.sh' )
+do
+	. "$f" || exit 1
+done
+
+
+################################################################################
+# Parse parameters
+################################################################################
+
+include_globalconf || exit 1
+vmcp_parseargs "$@" || exit $?
+shift $(( OPTIND - 1 ))
+
+vmcp_action=${vmcp_action:-'fork'}
+
+src=$( realpath -- "${1:?}" ) || exit 1
+if [ -f "$src" ]
+then
+	src=$( dirname -- "$src" )
+fi
+shift
+
+
+################################################################################
+# Main
+################################################################################
+
+rc=0
+parent_path=''
+
+# Create each fork.
+for dst
+do
+	# `vmcp_copy' action has been defined by setting `$vmcp_action' in the
+	# "Parse parameters" section.
+	if vmcp_copy -- "$src" "$dst"
+	then
+		cli_trace 1 "${dst}: Forked from '${src}'."
+	else
+		echo "ERROR: ${dst}: Failed to create the forked vitual machine." >&2
+		rc=1
+	fi
+done
+
+return "$rc"
+
+################################################################################
+### /usr/local/bin/vmfork END
+################################################################################

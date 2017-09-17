@@ -1,0 +1,496 @@
+#! /bin/sh -efu
+################################################################################
+### /usr/local/bin/vmdown BEGIN
+################################################################################
+#
+# Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+#
+# This file is part of vmtools.
+#
+# vmtools is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+################################################################################
+
+usage="Shutdown a Qemu virtual machine.
+
+Usage:
+  vmdown [-kstw] [vmhome_path ...]
+  vmdown [-kstw] -a
+  vmdown [-kstw] -p pid ...
+
+Target definition:
+  -a    Shutdown all running virtual machines.
+  -p    Shutdown the virtual machines with the given PIDs.
+
+The default target is to shutdown the virtual machines with the given home
+directories. If no home directory is given the current working directory is
+used.
+
+Action definition:
+  -k    Kill the virtual machine process (send a SIGKILL to the Qemu process).
+  -s    Send a shutdown request to the virtual machine guest.
+  -t    Terminate the virtual machine process (send a SIGTERM).
+
+The default is to enable all actions ('-kst').
+
+Options:
+  -h    Show usage information.
+  -q    Decrease verbosity.
+  -v    Increase verbosity.
+  -w    Wait for the virtual machine to terminate before proceeding.
+
+Exit code:
+  0     Success: all selected virtual machines have been shut down.
+  1     An error occured.
+  2     Wrong usage.
+  3     Partial success: some virtual machines may have been shutdown.
+"
+
+
+################################################################################
+# Global variables
+################################################################################
+
+# Action string, any combination of the 'k', 's' and 't' characters.
+action=''
+
+# Target type ('all', 'pid' or empty).
+target_type=''
+
+# Wait for the VM to terminate before exiting.
+wait='no'
+
+
+################################################################################
+# Functions
+################################################################################
+
+# Loading shared libs (loading them all is faster than nitpicking).
+for f in $( find '/usr/local/lib/vmtools' -name '*.inc.sh' )
+do
+	. "$f" || exit 1
+done
+
+###
+# _kill signal pid...
+#
+_kill() {
+	local 'signal'
+	signal=${1:?"ERROR (BUG): _kill: Missing parameter."}
+	shift
+	[ "${1-}" = '--' ] && shift
+	: "${1:?"ERROR (BUG): _kill: Missing parameter."}"
+
+	cli_trace 3 "Sending $signal signal to process:" "$@"
+	kill -s "$signal" -- "$@" || return 1
+}
+
+###
+# _running_pids [-w] pid...
+#
+# Returns a subset of the PIDs provided by parameter indicating which of the
+# associated virtual machines are still running.
+#
+# This function update the status of the `vmps' library.
+#
+# Options:
+# -w: Warn about missing/invalid PIDs.
+#
+# Exit code:
+# - 0: Successfull operation.
+# - 1: An error occured.
+# - 3: Some PIDs were not found (only when `-w' flag has been used).
+#
+_running_pids() {
+	local 'check_pid' 'opt' 'OPTARG' 'OPTIND' 'pid' 'pidlist' 'rc' 'warn'
+	pidlist=''
+	rc=0
+	warn='no'
+
+	OPTIND=1
+	while getopts 'w' opt
+	do
+		case "$opt" in
+			'w') warn='yes' ;;
+			*) return 1 ;;
+		esac
+	done
+	shift $(( OPTIND - 1 ))
+
+	vmps_init || return 1
+	for pid
+	do
+		check_pid=$( vmps_get_pid -- "$pid" ) || return 1
+		if [ "$pid" = "$check_pid" ]
+		then
+			str_list_add pidlist "$pid" || return 1
+		elif [ "$warn" = 'yes' ]
+		then
+			echo "ERROR: PID '$pid' not found or not a virtual machine." >&2
+			rc=3
+		fi
+	done
+
+	printf '%s' "$pidlist"
+	return "$rc"
+}
+
+###
+# _shutdown pid...
+#
+# Try to cleanly shutdown a guest by sending an ACPI power off event.
+#
+# This whole function is a mere ugly workaround to the lack of possibility to
+# cleanly power down a guest using standard Unix signals.
+# It will be removed once the following feature request gets completed (a patch
+# has been proposed to the Qemu team):
+# https://bugs.launchpad.net/qemu/+bug/1217339
+# Meanwhile, powering off a guest is possible only if all these requirements
+# are fulfilled:
+# - `socat' must be installed.
+# - The virtual machine must ave a home-dir.
+# - The monitor socket file must be enabled.
+# Using Unix signals will remove all of these.
+#
+# TODO: Remove this function as soon as it is not needed anymore.
+#
+# TODO: Add a few retries as ACPI events may be ignored whle the guest is still
+# starting.
+#
+_shutdown() {
+	local 'monitorfile' 'pid'
+	[ "${1-}" = '--' ] && shift
+
+	if ! type 'socat' >/dev/null 2>&1
+	then
+		echo "ERROR: The 'socat' command is not available on the host, guests" \
+			"cannot be cleanly shut down." >&2
+		return 1
+	fi
+
+	vmps_init || return 1
+	for pid
+	do
+		monitorfile=$( vmps_get_monitorfile -- "$pid" )
+		if [ -z "$monitorfile" -o ! -S "$monitorfile" ]
+		then
+			echo "WARNING: $( vmps_get_name -- "$pid" ) (PID ${pid}) has no" \
+				"monitor file, the guest OS cannot be cleanly shut down." >&2
+			continue
+		fi
+
+		cli_trace 3 "Shutting down process ${pid}."
+		printf 'system_powerdown\n' \
+			| socat - "UNIX-CONNECT:$( str_escape_grep -c ",!'\"" -- \
+			"${monitorfile}" )" >/dev/null || return 1
+	done
+}
+
+###
+# _wait pid...
+#
+# Wait for virtual machines to terminate.
+# Output the PID of the virtual machines which failed to terminate in the
+# allocated time on stdout.
+# This function update the status of the `vmps' library.
+#
+_wait() {
+	local 'pid' 'pidlist' 'timeout'
+	[ "${1-}" = '--' ] && shift
+	pidlist=$( _running_pids -- "$@" ) || return 1
+
+	if [ -n "$pidlist" ]
+	then
+		cli_trace 1 "Waiting (max. ${vm_qemu_shutdown_timeout:?} sec.)..."
+
+		timeout=$(( $( date +%s ) + ${vm_qemu_shutdown_timeout:?} )) || return 1
+		while [ -n "$pidlist" -a "$timeout" -gt "$( date +%s )"  ]
+		do
+			# Sleep may or may not support floating point numbers.
+			sleep 0.2 2>/dev/null || sleep 1
+			pidlist=$( _running_pids -- $pidlist ) || return 1
+		done
+	fi
+
+	if [ -n "$pidlist" ]
+	then
+		printf 'Some virtual machines are still running:\n' >&2
+		for pid in $pidlist
+		do
+			printf '    %s (PID %d)\n' "$( vmps_get_name -- "$pid" )" "$pid" >&2
+		done
+
+		printf '%s' "$pidlist"
+	fi
+}
+
+###
+# _wait_monitorfiles
+#
+# This function is a companion to the ugly _shutdown.
+#
+# TODO: Remove this function as soon as it is not needed anymore.
+#
+_wait_monitorfiles() {
+	local 'list_all' 'list_monitor' 'list_remaining' 'monitorfile' 'pid'
+	local 'timeout'
+	[ "${1-}" = '--' ] && shift
+	list_monitor=''
+	list_remaining=''
+
+	# List vitual machines which provide a monitor file.
+	list_all=$( _running_pids -- "$@" ) || return 1
+	for pid in $list_all
+	do
+		monitorfile=$( vmps_get_monitorfile -- "$pid" ) || return 1
+		if [ -n "$monitorfile" ]
+		then
+			str_list_add list_monitor "$pid" || return 1
+		else
+			str_list_add list_remaining "$pid" || return 1
+		fi
+	done
+
+	if [ -n "$list_monitor" ]
+	then
+		cli_trace 1 "Waiting (max. ${vm_qemu_shutdown_timeout:?} sec.)..."
+
+		# Wait them to shutdown.
+		timeout=$(( $( date +%s ) + ${vm_qemu_shutdown_timeout:?} )) || return 1
+		while [ -n "$list_monitor" -a "$timeout" -gt "$( date +%s )"  ]
+		do
+			# Guest OS clean shut down is not somethings which will be done in a
+			# few milliseconds, as opposed to Qemu process TERM for instance.
+			sleep 1
+			list_monitor=$( _running_pids -- $list_monitor ) || return 1
+		done
+
+		if [ -n "$list_monitor" ]
+		then
+			printf 'Some virtual machines are still running:\n' >&2
+			for pid in $list_monitor
+			do
+				printf '    %s\n' "$( vmps_get_name -- "$pid" ) (pid ${pid})" >&2
+			done
+
+			str_list_add list_remaining $list_monitor || return 1
+		fi
+	fi
+
+	printf '%s' "$list_remaining"
+}
+
+
+################################################################################
+# Parse parameters
+################################################################################
+
+include_globalconf || exit 1
+
+OPTIND=1
+while getopts "ahkpqstvw" param
+do
+	case "$param" in
+		'a'|'d'|'p') # Set the target.
+			if [ -n "$target_type" ]
+			then
+				echo "ERROR: You cannot mix several target flags." >&2
+				exit 2
+			fi
+			case "$param" in
+				'a') target_type='a' ;;
+				'p') target_type='p' ;;
+				*)
+					echo "ERROR (BUG): vmdown: Invalid target flag: $1." >&2
+					exit 1
+					;;
+			esac
+			;;
+
+		'h') # Show usage information.
+			printf '%s\n' "$usage"
+			exit 0
+			;;
+
+		'k'|'s'|'t') # Set the action.
+			if [ -n "$action" ]
+			then
+				# Enabling several actions assumes the `-w' flag.
+				wait='yes'
+			fi
+			case "$param" in
+				'k') action="${action}k" ;;
+				's') action="${action}s" ;;
+				't') action="${action}t" ;;
+				*)
+					echo "ERROR (BUG): vmdown: Invalid action flag: $1." >&2
+					exit 1
+					;;
+			esac
+			;;
+
+		'q') # Decrease verbosity.
+			if [ "${cfg_ui_verbosity:?}" -gt 0 ]
+			then
+				cfg_ui_verbosity=$(( cfg_ui_verbosity - 1 )) || exit 1
+			fi
+			;;
+
+		'v') # Increase verbosity.
+			cfg_ui_verbosity=$(( ${cfg_ui_verbosity:?} + 1 )) || exit 1
+			;;
+
+		'w') # Wait the VM to terminate before proceeding.
+			wait='yes'
+			;;
+
+		*)
+			echo "Unexpected argument: $1" >&2
+			exit 2
+			;;
+	esac
+done
+shift $(( OPTIND - 1 ))
+
+settings_set 'cfg_ui_verbosity' "${cfg_ui_verbosity:?}"
+if [ "${cfg_ui_verbosity:?}" -ge 5 ]
+then
+	set -x
+fi
+
+if [ -z "$action" ]
+then
+	# Enable all actions by default.
+	action='kst'
+fi
+if [ ${#action} -gt 1 ]
+then
+	wait='yes'
+fi
+
+if [ -z "$target_type" ]
+then
+	target_type='d'
+fi
+case "$target_type" in
+	'a')
+		if [  $# -ne 0 ]
+		then
+			echo "ERROR: Too many parameters." >&2
+			exit 2
+		fi
+		;;
+	'd')
+		if [ $# -eq 0 ]
+		then
+			set -- '.'
+		fi
+		;;
+	'p')
+		if [  $# -eq 0 ]
+		then
+			echo "ERROR: PID number missing." >&2
+			exit 2
+		fi
+		;;
+	*)
+		echo "ERROR (BUG): vmdown: Invalid value for \$target_type:" \
+			"'${target_type}'." >&2
+		exit 1
+		;;
+esac
+
+
+################################################################################
+# Main
+################################################################################
+
+errhandler="rc=3; continue"
+target_pids=''
+rc=0
+
+case "$target_type" in
+	'a') # Match all VM processes.
+		vmps_init || exit 1
+		target_pids=$( vmps_get_pid ) || eval "$errhandler"
+		;;
+
+	'd') # Match processes by VM home dir.
+		for target
+		do
+			target=$( realpath -- "$target" ) || eval "$errhandler"
+			if [ -f "${target}" ]
+			then
+				target=$( dirname -- "$target" )
+			fi
+
+			vmps_init -d "$target" || eval "$errhandler"
+			str_list_add 'target_pids' "$( vmps_get_pid )"
+		done
+		;;
+
+	'p') # Match process by PID
+		target_pids=$( _running_pids -w -- "$@" ) || eval "$errhandler"
+		;;
+
+	*)
+		echo "ERROR (BUG): vmdown: Invalid target type: '${target_type}'." >&2
+		exit 1
+		;;
+esac
+
+if [ -z "$target_pids" ]
+then
+	cli_trace 1 "No virtual machine to shutdown."
+	exit 0
+fi
+
+case "$action" in *'s'*)
+	cli_trace 1 "Powering off guests..."
+	_shutdown -- $target_pids || exit 1
+
+	if [ "$wait" = 'yes' ]
+	then
+		target_pids=$( _wait_monitorfiles -- $target_pids ) || exit 3
+		if [ -z "$target_pids" ]
+		then
+			exit "$rc"
+		fi
+	fi
+esac
+
+case "$action" in *'t'*)
+	cli_trace 1 "Terminating Qemu processes..."
+	_kill 'TERM' -- $target_pids || exit 3
+
+	if [ "$wait" = 'yes' ]
+	then
+		target_pids=$( _wait -- $target_pids ) || exit 3
+		if [ -z "$target_pids" ]
+		then
+			exit "$rc"
+		fi
+	fi
+esac
+
+case "$action" in *'k'*)
+	cli_trace 1 "Killing Qemu processes..."
+	_kill 'KILL' -- $target_pids || exit 3
+esac
+
+exit "$rc"
+
+################################################################################
+### /usr/local/bin/vmdown END
+################################################################################

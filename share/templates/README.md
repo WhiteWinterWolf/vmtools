@@ -1,0 +1,1 @@
+Characters allowed for the template name: alpha-numerical characters and underscore (_).

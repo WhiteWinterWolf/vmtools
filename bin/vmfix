@@ -1,0 +1,757 @@
+#! /bin/sh -efu
+################################################################################
+### /usr/local/bin/vmfix BEGIN
+################################################################################
+#
+# Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+#
+# This file is part of vmtools.
+#
+# vmtools is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+################################################################################
+
+usage="Detect and fix virtual machines issues.
+
+Usage:
+  vmfix [-Aabdhlnpqrsv] [directory...]
+
+Tests selection options:
+  -b    Delete temporary bakup directories.
+  -d    Delete work files (cosmetic).
+  -l    Delete lock files.
+  -p    Fix parent-child link issues.
+  -s    Fix storage image files path issues.
+
+No test is selected by default, it is mandatory to explicitely select at least
+one or use either '-a' or '-A'.
+
+Other options:
+  -A    Execute all tests, including the cosmetic ones (equivalent to '-bdlps').
+  -a    Execute all defect tests (equivalent to '-blps').
+  -h    Show usage information.
+  -n    Do not modify anything, only check for issues.
+  -q    Decrease verbosity.
+  -r    Enable recursive mode.
+  -v    Increase verbosity.
+
+Exit code:
+  0     No issue has been found.
+  1     An internal error occured.
+  2     Wrong usage.
+  3     At least one of the selected test found an issue.
+"
+
+# TODO: Merge -p and -s into a redefined -p (fix Path issues), internally
+# explode this test into several function and add new functions as new features
+# rely on path (maybe something with snapshoting sleeping VMs?).
+
+
+################################################################################
+# Global variables
+################################################################################
+
+# A combination of characters indicating the checks to perform.
+action=''
+
+# If 'yes', only check but do not modify anything.
+checkonly='no'
+
+# Process the directory given as parameter recursively.
+recursive='no'
+
+
+################################################################################
+# Functions
+################################################################################
+
+# Loading shared libs (loading them all is faster than nitpicking).
+for f in $( find '/usr/local/lib/vmtools' -name '*.inc.sh' )
+do
+	. "$f" || exit 1
+done
+
+###
+# _fix_backups directory...
+#
+# Search for remaining backup directories and delete them.
+#
+# This test does not use and is not affected by lock files.
+#
+_fix_backups() {
+	local 'dir' 'found' 'name' 'rc' 'toadd'
+	[ "${1-}" = '--' ] && shift
+	found=''
+	name="$( expr "${cfg_file_tmpdir:?}" : '\(.*\)\.X*' ).*"
+	rc=0
+
+	for dir
+	do
+		toadd=''
+		if [ "$recursive" = 'yes' ]
+		then
+			toadd=$( find "$dir" -type d -name "$name" ) || rc=1
+		else
+			toadd=$( find "$dir" -mindepth 1 -maxdepth 1 -type d \
+				-name "$name" ) || rc=1
+		fi
+		if [ -n "$toadd" ]
+		then
+			str_list_add 'found' $toadd || rc=1
+		fi
+	done
+
+	if [ -n "$found" ]
+	then
+		echo "WARNING: Backup directories found:" >&2
+		printf '    %s\n' $found >&2
+
+		if [ "$checkonly" != 'yes' ]
+		then
+			rm -rf -- $found || return 1
+			echo "SOLVED: Backup directories deleted." >&2
+		fi
+
+		if [ "$rc" -eq 0 ]
+		then
+			rc=3
+		fi
+	fi
+
+	return "$rc"
+}
+
+###
+# _fix_parentage directory
+#
+# Fixes parent-child links:
+# - Check that the parent of the current VM correctly lists it as a child.
+# - Check that all childs of the current VM exist. If one does not exists:
+#   - Check if it can be found in the current VM homedir, in such case both the
+#     current VM child list and the child's parent link are updated.
+#   - Otherwise it is deleted from the current VM childs list.
+#
+# This accept a single `directory' as parameter and requires it to be locked.
+#
+_fix_parentage() (
+	local 'child' 'childs_modified' 'childslist' 'parent_child' 'parent_vm'
+	local 'rc' 'tounlock' 'vm_home'
+	vm_home=${1:?"ERROR (BUG): _fix_parentage: Missing parameter."}
+	if [ $# -gt 1 ]
+	then
+		echo "ERROR (BUG): _fix_parentage: Too many arguments." >&2
+		exit 1
+	fi
+	childs_modified='no'
+	rc=0
+	tounlock=''
+
+	cleanup_reset
+	lock_check -- "$vm_home" || exit 1
+
+	# First check if the parent correctly links back to the current VM.
+	parent_vm=$( parent_get_nearest -- "$vm_home" ) || exit 1
+	if [ -n "$parent_vm" ]
+	then
+		lock_acquire -- "$parent_vm" || exit 1
+		# Do not unlock early, as a premature exit will lead to a rollback of
+		# any modification which is not a good thing if the VM was already
+		# left unlocked.
+		str_list_add tounlock "$parent_vm" || exit 1
+		childs_init -- "$parent_vm" || exit 1
+		childslist=$( childs_get_list -- "$parent_vm" ) || exit 1
+		if ! printf '%s' "$childslist" | grep -Fqx "$vm_home"
+		then
+			echo "WARNING: $parent_vm: Child link missing: '${vm_home}'." >&2
+			rc=3
+
+			if [ "$checkonly" != 'yes' ]
+			then
+				childs_add -- "$parent_vm" "$vm_home" || exit 1
+				childs_save -- "$parent_vm" || exit 1
+				echo "SOLVED: $parent_vm: Child link added: '${vm_home}'." >&2
+			fi
+		fi
+	fi
+
+	# Now check that all childs of the current VM exist.
+	# This command automatically raise a warning in case of non-existing childs.
+	childs_init -- "$vm_home" || exit 1
+	childslist=$( childs_get_list -- "$vm_home" ) || exit 1
+
+	for child in $childslist
+	do
+		if [ -f "${child}/${cfg_file_vmsettings:?}" ]
+		then
+			# The referenced child VM exists, check if its `parent'
+			# statement correctly links back to the current VM.
+			lock_acquire -- "$child" || exit 1
+			str_list_add tounlock "$child" || exit 1
+			parent_child=$( parent_get_nearest -- "$child" ) || exit 1
+			if [ "$parent_child" != "$vm_home" ]
+			then
+				if [ -n "$parent_child" ]
+				then
+					# We do not check if the VM targetted by the parent
+					# actually exists, example scenario: user manually replace
+					# a corrupted child VM by a pristine copy, `vmfix' is
+					# expected to link it to its new parent.
+					echo "WARNING: $child: Parent link invalid:" \
+						"'${parent_child}'." >&2
+				else
+					echo "WARNING: $child: Parent link missing." >&2
+				fi
+				rc=3
+
+				if [ "$checkonly" != 'yes' ]
+				then
+					settings_setparent -- "$vm_home" "$child" || exit 1
+					echo "SOLVED: $child: Parent path updated: '${vm_home}'." \
+						>&2
+				fi
+			fi
+		else
+			# The referenced child VM does not exists.
+			# The list of missing child ("WARNING" messages) is already printed
+			# by `childs_init()'.
+			rc=3
+
+			# Check if the missing child may be found in the current directory
+			# in a path no yet registered.
+			if test "$checkonly" != 'yes' \
+				-a -f "${vm_home}/${child##*/}/${cfg_file_vmsettings:?}" \
+				&& ! printf '%s' "$childslist" | grep -Fqx \
+				"${vm_home}/${child##*/}"
+			then
+				lock_acquire -- "${vm_home}/${child##*/}" || exit 1
+				str_list_add tounlock "${vm_home}/${child##*/}" || exit 1
+				# We indeed found a VM bearing the right name and not currently
+				# known as a child. To ensure it is the expected child we must
+				# ensure that it targets a parent located in the directory
+				# directly above it (scenario: manually renamed VM tree).
+				# Not doing this check would cause some risk of linking an
+				# unrelated VM which would most likely lead to the VM
+				# corruption (scenario: nesting unrelated VMs in VM home using
+				# similar names).
+				parent_child=$( parent_get_nearest -- \
+					"${vm_home}/${child##*/}" ) || exit 1
+				if [ "$parent_child" = "${child%/*}" ]
+				then
+					childs_remove -- "$vm_home" "$child" || exit 1
+					child="${vm_home}/${child##*/}"
+					childs_add -- "$vm_home" "$child" || exit 1
+					childs_modified='yes'
+					echo "SOLVED: $vm_home: Child location updated: '$child'." \
+						>&2
+					settings_setparent -- "$vm_home" "$child" || exit 1
+					echo "SOLVED: $child: Parent path updated: '${vm_home}'." \
+						>&2
+				fi
+			elif [ "$checkonly" != 'yes' ]
+			then
+				# The child either does not exists anymore or has not been
+				# found. In the latter case, the child database will be updated
+				# when fixing the child's own directory as its `parent' setting
+				# should still point to the current VM (scenario: child VM
+				# directory manually renamed or moved outside of the VM tree).
+				childs_remove -- "$vm_home" "$child" || exit 1
+				childs_modified='yes'
+				echo "SOLVED: $vm_home: Child unregistered: '${child}'." >&2
+			fi
+		fi
+	done
+
+	if [ "$childs_modified" = 'yes' ]
+	then
+		childs_save -- "$vm_home" || exit 1
+	fi
+	if [ -n "$tounlock" ]
+	then
+		lock_release -- $tounlock || exit 1
+	fi
+	cleanup_end
+	exit "$rc"
+)
+
+###
+# _fix_lockfiles directory...
+# _fix_lockfiles lock_file...
+#
+# Search for remaning lock files and delete them.
+#
+_fix_lockfiles() {
+	local 'dir' 'found' 'lockfile' 'rc' 'toadd'
+	[ "${1-}" = '--' ] && shift
+	found=''
+	rc=0
+
+	for dir
+	do
+		if [ "$recursive" = 'yes' ]
+		then
+			toadd=$( find "$dir" -type l -name "${cfg_file_lock:?}" )  || rc=1
+			if [ -n "$toadd" ]
+			then
+				str_list_add found $toadd || rc=1
+			fi
+		else
+			lockfile="${dir%"/${cfg_file_lock:?}"}/${cfg_file_lock:?}"
+			if [ -L "$lockfile" ]
+			then
+				str_list_add found "$lockfile" || rc=1
+			fi
+		fi
+	done
+
+	if [ -n "$found" ]
+	then
+		echo 'WARNING: Lock files found:' >&2
+		printf '    %s\n' $found >&2
+
+		if [ "$checkonly" != 'yes' ]
+		then
+			rm -f -- $found || return 1
+			echo "SOLVED: Lock files deleted." >&2
+		fi
+
+		if [ "$rc" -eq 0 ]
+		then
+			rc=3
+		fi
+	fi
+
+	return "$rc"
+}
+
+###
+# _fix_storage directory
+#
+# Browse VM settings file:
+# - If the storage image path is invalid but a file with the same exists in
+#   the VM home, modify the path to point to this file.
+# - If the storage backing file points to non-existing file but that a file
+#   with the same name exist in the VM's parent directory, modify the path
+#   to use that one.
+#
+# This function relies on the parent location to solve some issues, in case of
+# multiple issues parent path must therefore be solved before calling this
+# function.
+#
+# This test accepts a single `directory' parameter and requires it to be locked.
+#
+_fix_storage() (
+	local 'backing_path' 'comment' 'newpath' 'parent_path' 'prefix' \
+	local 'rc' 'storage' 'storage_path' 'vm_home'
+	vm_home=${1:?"ERROR (BUG): _fix_storage: Missing parameter."]}
+	if [ $# -gt 1 ]
+	then
+		echo "ERROR (BUG): _fix_storage: Too many arguments." >&2
+		exit 1
+	fi
+	comment=''
+
+	cleanup_reset
+	lock_check -- "$vm_home" || exit 1
+	settings_import -s || exit 1
+
+	for setting in $( settings_get | awk -F '=' \
+		'/^vm_storage_[a-z0-9_]*_backend/ { print $1 }' )
+	do
+		eval "storage=\$$setting"
+		if [ -z "$storage" ]
+		then
+			# No backend file, continue to the next one.
+			continue
+		fi
+
+		storage_path=$( storage_get_path -- "$storage" ) || exit 1
+		if expr "$storage_path" : '[a-zA-Z]*://\|[nN][bB][dD]:' \
+			>/dev/null
+		then
+			# The  is a remote file URL, ignore it.
+			continue
+		fi
+
+		if [ ! -r "$storage_path" ]
+		then
+			echo "WARNING: $vm_home: ${setting}: Storage image file not found" \
+				"or not readable: '${storage_path}'." >&2
+			if [ "$rc" -eq 0 ]
+			then
+				rc=3
+			fi
+
+			if [ "$checkonly" = 'yes' ]
+			then
+				continue
+			fi
+
+			# If we are lucky, the storage backend file is located
+			# in the VM home dir and can be relinked.
+			newpath="${vm_home}/${storage_path##*/}"
+			if [ -r "$newpath" ]
+			then
+				echo "SOLVED: $vm_home: ${setting}: Storage image file set to" \
+					"'$newpath'." >&2
+				prefix=$( storage_get_prefix -- "$storage" ) \
+					|| exit 1
+				storage_path=$newpath
+				storage="${prefix}${storage_path}"
+
+				settings_override "$setting" "$storage" >&2 \
+					|| exit 1
+				str_list_add 'comment' \
+					"Fixed '$setting' path (was '$storage')." \
+					|| exit 1
+			fi
+		fi
+
+		backing_path=$( storage_get_backingfile -- "$storage_path" ) || exit 1
+		if [ -z "$backing_path" ]
+		then
+			# Standalone or root image file, no backing issue.
+			continue
+		fi
+
+		if [ ! -r "$backing_path" ]
+		then
+			echo "WARNING: $storage_path: ${setting}: Backing file not found" \
+				"or not readable: '${backing_path}'." >&2
+			if [ "$rc" -eq 0 ]
+			then
+				rc=3
+			fi
+
+			if [ "$checkonly" = 'yes' ]
+			then
+				continue
+			fi
+
+			# If we are lucky, the missing file can be found the
+			# parent VM home directory.
+			parent_path=$( parent_get_nearest ) || exit 1
+			if [ -z "$parent_path" ]
+			then
+				continue
+			fi
+
+			newpath="${parent_path}/${backing_path##*/}"
+			if [ -r "$newpath" ]
+			then
+				qemu-img 'rebase' -u -b "$newpath" -- \
+					"$storage_path" || exit 1
+				echo "SOLVED: $storage_path: ${setting}: Backing file rebased" \
+					"against '${newpath}'." >&2
+			fi
+		fi
+	done
+
+	if [ -n "$comment" ]
+	then
+		settings_save "$comment" || exit 1
+		echo "$vm_home: Settings updated." >&2
+	fi
+
+	cleanup_end
+	exit "$rc"
+)
+
+###
+# _fix_workfiles directory...
+#
+# Delete vmtools' monitor socket file and PID file.
+#
+# This test creates a lock before attempting to delete the files.
+#
+_fix_workfiles() {
+	local 'dir' 'dirlist' 'found' 'filename' 'rc' 'toadd'
+	[ "${1-}" = '--' ] && shift
+	dir=${1:?"ERROR (BUG): _fix_workfiles: Missing parameter."}
+	found=''
+	rc=0
+
+	for dir
+	do
+		toadd=''
+		if [ "$recursive" = 'yes' ]
+		then
+			toadd=$( find "$dir" -name "${cfg_file_pid:?}" \
+				-o -name "${cfg_file_monitor:?}" ) || rc=1
+		else
+			toadd=$( find "$dir" -mindepth 1 -maxdepth 1 \
+				-name "${cfg_file_pid:?}" -o -name "${cfg_file_monitor:?}" ) \
+				|| rc=1
+		fi
+		if [ -n "$toadd" ]
+		then
+			str_list_add 'found' $toadd || rc=1
+		fi
+	done
+
+	if  [ -n "$found" ]
+	then
+		echo "NOTICE: Work files found:" >&2
+		printf '    %s\n' $found >&2
+
+		if [ "$checkonly" != 'yes' ]
+		then
+			dirlist=$( dirname -- $found | LC_ALL=C sort -u )
+
+			lock_acquire $dirlist || return 1
+			rm -rf -- $found || return 1
+			lock_release $dirlist || return 1
+
+			echo "SOLVED: Working files deleted." >&2
+		fi
+
+		if [ "$rc" -eq 0 ]
+		then
+			rc=3
+		fi
+	fi
+
+	return "$rc"
+}
+
+###
+# _set_rc return_code
+#
+_set_rc() {
+	local 'newrc'
+	newrc=${1:?"ERROR (BUG): _set_rc: Missing parameter."}
+
+	case "$rc" in '0'|'3')
+		rc=$newrc
+	esac
+}
+
+
+################################################################################
+# Parse parameters
+################################################################################
+
+include_globalconf || exit 1
+
+OPTIND=1
+while getopts "Aabdhlnpqrsv" param
+do
+	case "$param" in
+		'A') # Execute all tests, including the cosmetic ones.
+			action='bdlps'
+			;;
+
+		'a') # Execute all defects tests.
+			action='blps'
+			;;
+
+		'b') # Remove temporary backup files.
+			action="${action}${param}"
+			;;
+
+		'd') # Delete work files (cosmetic).
+			action="${action}${param}"
+			;;
+
+		'h') # Show usage information.
+			printf '%s\n' "$usage"
+			exit 0
+			;;
+
+		'l') # Remove lock files.
+			action="${action}${param}"
+			;;
+
+		'n') # Do not modify anything, only check.
+			checkonly='yes'
+			;;
+
+		'p') # Fix parent-childs links issues.
+			action="${action}${param}"
+			;;
+
+		'q') # Decrease verbosity.
+			if [ "${cfg_ui_verbosity:?}" -gt 0 ]
+			then
+				cfg_ui_verbosity=$(( cfg_ui_verbosity - 1 )) || exit 1
+			fi
+			;;
+
+		'r') # Enable recursive mode.
+			recursive='yes'
+			;;
+
+		's') # Fix storage.
+			action="${action}${param}"
+			;;
+
+		'v') # Increase verbosity.
+			cfg_ui_verbosity=$(( ${cfg_ui_verbosity:?} + 1 )) || exit 1
+			;;
+
+		*)
+			printf 'Unexpected argument: %s\n' "$1" >&2
+			exit 2
+			;;
+	esac
+done
+shift $(( OPTIND - 1 ))
+
+settings_set 'cfg_ui_verbosity' "${cfg_ui_verbosity:?}"
+if [ "${cfg_ui_verbosity:?}" -ge 5 ]
+then
+	set -x
+fi
+
+# No default action, avoids accidents.
+if [ -z "$action" ]
+then
+	echo "ERROR: No action selected." >&2
+	exit 2
+fi
+
+if [ "$#" -eq 0 ]
+then
+	set -- "."
+fi
+
+
+################################################################################
+# Main
+################################################################################
+
+rc=0
+
+dirs_list=$( realpath -- "$@" ) || rc=1
+
+# Use several `case' statements as actions can be cumulative.
+
+# Fix backup directories.
+# This test does not rely on lock files.
+case "$action" in *'b'*)
+	cli_trace 3 "Checking backup directories issues..."
+
+	if _fix_backups $dirs_list
+	then
+		cli_trace 3 "No backup directory issue found."
+	else
+		_set_rc $?
+	fi
+esac
+
+# Fix lock files
+case "$action" in *'l'*)
+	cli_trace 3 "Checking lock files issues..."
+
+	if _fix_lockfiles $dirs_list
+	then
+		cli_trace 3 "No lock files issue found."
+	else
+		_set_rc $?
+
+		if [ "$checkonly" = 'yes' ]
+		then
+			# Lock files issues were found and were not corrected.
+			# This will prevent checks trying to lock the anaylized directory
+			# from working, so give up.
+			echo "WARNING: The other checks have been disabled due to lock" \
+				"files inconsistencies." >&2
+			exit "$rc"
+		fi
+	fi
+esac
+
+case "$action" in *'d'*)
+	# Delete work files.
+	# Simple cleanup, handles locks itself.
+	cli_trace 3 "Checking for unused work files..."
+	if _fix_workfiles $dirs_list
+	then
+		cli_trace 3 "No unused work files."
+	else
+		_set_rc $?
+	fi
+esac
+
+for p in $dirs_list
+do
+	if [ "$recursive" = 'yes' ]
+	then
+		# Recursive operation: search for all VM settings files stored in
+		# any subdirectory, and operate on these subdirectories.
+		# Searching for directories instead of VM settings files names allows
+		# to get a proper breadth-first browsing of the VM tree.
+		p=$( find "$p" ! -path "*${newline}*" -a -type d ) || _set_rc 1
+	else
+		p=${p%"/${cfg_file_vmsettings:?}"}
+		if [ ! -r "${p}/${cfg_file_vmsettings}" ]
+		then
+			echo "ERROR: ${p}: File '${cfg_file_vmsettings}' not found or" \
+				"not readable." >&2
+			_set_rc 1
+			continue
+		fi
+	fi
+
+	for dir in $p
+	do
+		if [ ! -e "${dir}/${cfg_file_vmsettings}" ]
+		then
+			# The recursive `find' may return directories which are not VM
+			#  homes, they can be safely ignored.
+			continue
+		fi
+
+		if ! lock_acquire -- "$dir"
+		then
+			_set_rc 1
+			continue
+		fi
+
+		case "$action" in *'p'*)
+			# Attempt to restore missing parent-child links.
+			cli_trace 3 "Checking parent-child linking issues..."
+			if _fix_parentage "$dir"
+			then
+				cli_trace 3 "No child linking issue found."
+			else
+				_set_rc $?
+			fi
+		esac
+
+		case "$action" in *'s'*)
+			# Fix storage.
+			# Storage must be fixed after solving parent path issues as it
+			# relies on this information.
+			cli_trace 3 "Checking storage issues..."
+			if _fix_storage "$dir"
+			then
+				cli_trace 3 "No storage issue found."
+			else
+				_set_rc $?
+			fi
+		esac
+
+		if ! lock_release -- "$dir"
+		then
+			_set_rc 1
+			continue
+		fi
+	done
+done
+
+exit "$rc"
+
+################################################################################
+### /usr/local/bin/vmfix END
+################################################################################

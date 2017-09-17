@@ -1,0 +1,176 @@
+#! /bin/sh -efu
+################################################################################
+### /usr/local/bin/vmmon BEGIN
+################################################################################
+#
+# Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+#
+# This file is part of vmtools.
+#
+# vmtools is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+################################################################################
+
+usage="Access the Qemu monitor shell.
+
+Usage:
+  vmmon [-h] [path]
+
+Options:
+  -h    Show usage information.
+"
+
+################################################################################
+# Global variables
+################################################################################
+
+# Directory containing the socket file.
+socket_dir=''
+
+# Name of the socket file.
+socket_file=''
+
+
+################################################################################
+# Global variables
+################################################################################
+
+# Directory containing the socket file.
+socket_dir=''
+
+# Socket file name.
+socket_file=''
+
+# VM home dir, if the socket path has not been directly provided by the user.
+vmhome=''
+
+
+################################################################################
+# Functions
+################################################################################
+
+# Loading shared libs (loading them all is faster than nitpicking).
+for f in $( find '/usr/local/lib/vmtools' -name '*.inc.sh' )
+do
+	. "$f" || exit 1
+done
+
+
+################################################################################
+# Parse parameters
+################################################################################
+
+include_globalconf || exit 1
+
+if [ "${1-}" = '-h' ]
+then
+	printf '%s\n' "$usage"
+	exit 0
+fi
+
+if [ "${1-}" = '--' ]
+then
+	shift
+fi
+
+if [ $# -gt 1 ]
+then
+	echo "ERROR: Too many arguments." >&2
+	exit 2
+fi
+
+socket_file=${1:-"."}
+
+if [ -S "$socket_file" ]
+then
+	# The argument a direct path to a socket file.
+	socket_dir=$( dirname -- "$socket_file" )
+	socket_file=${socket_file##*/}
+
+elif [ -f "$socket_file" ]
+then
+	# The argument is a file, consider it as a part of a VM home.
+	vmhome=$( dirname -- "$socket_file" )
+
+elif [ -d "$socket_file" ]
+then
+	vmhome=$socket_file
+
+else
+	echo "ERROR: ${socket_file}: Invalid path." >&2
+fi
+
+
+################################################################################
+# Main
+################################################################################
+
+if ! type 'socat' >/dev/null 2>&1
+then
+	echo "ERROR: 'socat' must be installed before using this command." >&2
+	echo "In addition, installing 'rlwrap' too will provide you a slightly" \
+		"more convenient prompt." >&2
+	exit 1
+fi
+
+if [ -n "$vmhome" ]
+	# The `buildcmd' modules may be customized and may not necessarily store
+	# the socket file in the VM home dir as the default modules do.
+	if [ ! -r "${vmhome}/${cfg_file_pid}" ]
+	then
+		echo "ERROR: ${vmhome}/${cfg_file_pid}: File not found or not" \
+			"readable, check that the virtual machine is currently running." >&2
+		exit 1
+	fi
+
+	pid=$( cat -- "${vmhome}/${cfg_file_pid}" ) || exit 1
+	vmps_init -p "$pid" || exit 1
+	if vmps_isempty
+	then
+		echo "ERROR: ${vmhome}: The virtual machine is not currently running." \
+			>&2
+		exit 1
+	fi
+
+	socket_file=$( vmps_get_monitorfile ) || exit 1
+	socket_dir=${socket_file%/*}
+	socket_file=${socket_file##*/}
+fi
+
+# Change directory to avoid any path length issue (socket files path is limited
+# to about 100 characters on Unix systems).
+cd -- "$socket_dir" || exit 1
+
+if [ ! -S "$socket_file" ]
+then
+	echo "ERROR: ${socket_dir}/${socket_file}: File not found or not a socket" \
+		"file." >&2
+	exit 1
+fi
+
+if type 'rlwrap' >/dev/null 2>&1
+then
+	exec rlwrap -C qmp socat - "UNIX-CONNECT:$( str_escape_grep -c ",!'\"" -- \
+		"$socket_file" )"
+else
+	exec socat - "UNIX-CONNECT:$( str_escape_grep -c ",!'\"" -- \
+		"$socket_file" )"
+fi
+
+# The execution flow should not reach this point (`exec').
+exit 1
+
+################################################################################
+### /usr/local/bin/vmmon END
+################################################################################

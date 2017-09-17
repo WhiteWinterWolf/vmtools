@@ -1,0 +1,1637 @@
+.\" ############################################################################
+.\" ### /usr/local/share/man/man5/vmtools.conf.5.gz BEGIN
+.\" ############################################################################
+.\"
+.\" Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+.\"
+.\" This file is part of vmtools.
+.\"
+.\" vmtools is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
+.\"
+.\" ############################################################################
+.
+.Dd June 3, 2017
+.Dt VMTOOLS.CONF 5
+.Os vmtools
+.
+.
+.Sh NAME
+.
+.Nm vmtools.conf
+.Nd vmtools configuration files
+.
+.
+.Sh DESCRIPTION
+.
+.Xr vmtools 7
+commands obtain their configuration data from the following sources in the
+following order:
+.Pp
+.Bl -enum -compact -offset indent
+.It
+Default settings
+.Pa ( /usr/local/share/vmtools.conf ) .
+.It
+System-wide settings
+.Pa ( /etc/vmtools/vmtools.conf ) .
+.It
+User settings
+.Pa ( ~/.config/vmtools/vmtools.conf ,
+see
+.Sx FILES
+below for more information).
+.It
+Virtual machine settings, if applicable (including potential templates and
+parent files).
+.It
+Command-line options (in particular t the
+.Fl o Ar setting Ns Ic = Ns Ar value
+option).
+.El
+.Pp
+For each parameter, the last obtained value will be used.
+.Pp
+Currently the default, system, user settings and templates files are sourced as
+traditional shell script files but this behavior may change in a future version.
+Virtual machines settings files are more strongly checked:
+.Pp
+.Bl -bullet -offset indent
+.It
+Two classes of characters are distinguished:
+.Pp
+.Bl -dash -compact -offset indent
+.It
+.Em Safe strings
+are composed of alphanumeric characters and the underscore
+character (_).
+.It
+.Em Extended strings
+do not need to be quoted (though it is allowed) when they only contain
+characters from the following classes:
+.Pp
+.Bl -bullet -compact -offset indent
+.It
+Safe characters.
+.It
+The dash (-), dot (.) and forward slash (/) characters.
+.El
+.Pp
+Strings containing any other character must be enclosed in single quotes (').
+.Pp
+Single quotes appearing as part of an extended string must be escaped using the
+following sequence:
+.Ic '\e''
+(single quote, backslash followed by two single quotes).
+.Pp
+Here is an example setting the virtual machine name to
+.Dq John's VM :
+.Pp
+.Dl vm_name='John'\e''s VM'
+.Pp
+The linefeed (\en) and null (\e0) characters are forbidden in extended strings,
+even enclosed between single quotes.
+.El
+.It
+Empty lines and lines starting with a
+.Sq #
+are comments.
+.It
+The general syntax for assigning a value to a setting is:
+.Pp
+.Dl Ar setting Ns Ic = Ns Ar value
+.Pp
+.Ar setting
+is composed of safe characters and begins with one of these
+prefix:
+.Pp
+.Bl -tag -width "cfg_" -offset indent
+.It Cm cfg_
+.Xr vmtools 7
+general settings.
+.br
+They can only be set in the default, system and user configuration files and
+through command-line options.
+Virtual machine settings files and templates must not modify them.
+.It Cm vm_
+Virtual machine definition settings.
+.br
+They can be updated at any step.
+.El
+.Pp
+.Ar value
+is an extended string.
+.br
+No space is allowed around the
+.Ic =
+symbol.
+.It
+In addition to settings assignment, templates and virtual machine settings
+files can also invoke templates using the following syntax:
+.Pp
+.Dl Cm template Ar template_name ...
+.Pp
+.Ar template_name
+is composed of safe characters.
+.It
+Child virtual machines invoke their parent's settings using the following
+syntax:
+.Pp
+.Dl Cm parent Ar parent_path
+.Pp
+.Ar parent_path
+is an extended string.
+.Pp
+The
+.Cm parent
+keyword can be invoked only once per virtual machine settings file, the parent
+virtual machine however can invoke its own parent to implement a virtual
+machines chain.
+.El
+.Pp
+.
+.
+.Sh VMTOOLS GENERAL SETTINGS
+.
+vmtools general settings describe vmtools behavior and are shared between all
+virtual machines. They are all using the prefix
+.Cm cfg_ .
+They cannot be set in virtual machines and templates settings files.
+.Pp
+vmtools general settings are as follows:
+.
+.Bl -tag -width Ds
+.It Cm cfg_include_userhome Ns = Ns Op Cm yes Ns | Ns Cm no
+If
+.Ic yes ,
+allow files in the user's configuration directory to override default and
+system-wide settings and modules.
+Otherwise user's configuration files are silently ignored.
+.Pp
+See
+.Sx FILES
+below for more information on files location.
+.Pp
+Some
+.Xr vmtools 7
+commands allow to overwrite this setting on a per command-line basis using the
+.Fl o
+flag:
+.Pp
+.Dl Fl o Cm cfg_include_userhome=yes
+.Pp
+Default value:
+.Ic 'no' .
+.
+.It Cm cfg_qemu_cmdprefix Ns = Ns extended_string
+Prefix to build the Qemu command-line.
+.Pp
+The content of
+.Cm vm_qemu_arch
+is appended to this prefix in order to complete the name of the Qemu binary
+file to execute.
+This avoids to store path to binary executable files in virtual machines
+settings files.
+.Pp
+Assigning an absolute path to
+.Cm cfg_include_userhome
+allows to use a non-default Qemu binary executable file (to test a locally
+compiled version of Qemu for instance).
+Otherwise, the Qemu binary executable will be searched in
+.Ev PATH .
+.Pp
+The binary executable file name must begin with
+.Ic qemu-system- ,
+otherwise the process will not be recognized by the
+.Xr vmps 1
+utility.
+.br
+Default value:
+.Ic 'qemu-system-' .
+.El
+.
+.Ss File
+.
+.Bl -tag -width Ds
+.It Cm cfg_file_childs Ns = Ns Ar extended_string
+File storing the path to every child forked from the current
+virtual machine.
+.br
+Default value:
+.Ic 'childs.lst' .
+.
+.It Cm cfg_file_lock Ns = Ns Ar extended_string
+File (acutally a symbolic link) used to lock access to a virtual machine,
+preventing concurrent access issues.
+.br
+Default value:
+.Ic '.vm.settings.lock' .
+.
+.It Cm cfg_file_pid Ns = Ns Ar extended_string
+File storig the PID of the Qemu hypervisor process running the current virtual
+machine.
+.br
+Default value:
+.Ic 'qemu.pid' .
+.
+.It Cm cfg_file_monitor Ns = Ns Ar extended_string
+Socket file providing access to the Qemu monitor shell.
+.Pp
+This file is created only if
+.Cm vm_qemu_daemonize
+is set to
+.Ic yes .
+.br
+Default value:
+.Ic 'monitor.sock' .
+.
+.It Cm cfg_file_tmpdir Ns = Ns Ar extended_string
+Pattern for the name of the directory used to store temporary backup files.
+.Pp
+Usually such directories are created below the system's default temporary
+directory (see
+.Sx ENVIRONMENT
+below), but when they may be used to store large files (like disk image files)
+they will be created in other places (in the virtual machine home directory,
+its parent directory or the home diretory of the parent virtual machine
+depending on the context) to avoid moving such files between different
+partitions and filling up potentially small temporary directories.
+.Pp
+This pattern contains trailing 'X' which are replaced by random characters (see
+.Xr mktemp 1 ) .
+For security purpose it is recommended to use at least around six trailing 'X'.
+Some
+.Xr mktemp 1
+implementation enforce a minimum of three trailing 'X'.
+.br
+Default value:
+.Ic 'vmtools-backup.XXXXXXXXXX' .
+.
+.It Cm cfg_file_vmsettings Ns = Ns Ar extended_string
+File storing the virtual machine settings.
+.br
+Default value:
+.Ic 'vm.settings' .
+.El
+.
+.Ss Limit
+.
+.Bl -tag -width Ds
+.It Cm cfg_limit_nesting Ns = Ns Ar positive_integer
+Maximum nesting level for templates and child virtual machines nesting.
+This value is used to detect infinite loops.
+.br
+Default value:
+.Ic 100 .
+.
+.It Cm cfg_limit_waitlock Ns = Ns Ar positive_integer
+Time (in seconds) after which
+.Xr vmtools 7
+commands will give up after unsuccessful attempts to acquire a lock.
+.Pp
+It is possible that unused lock files may remain after a crash.
+See
+.Xr vmfix 1
+to delete such files.
+.Pp
+See also the
+.Cm cfg_file_lock
+setting to set the lock file name.
+Default value:
+.Ic 10 .
+.Pp
+.El
+.
+.Ss Modules
+.
+These settings are space-separated lists of names of vmtools modules to be
+called in certain circumstances.
+The modules are invoked in their order of appearance in these lists.
+.
+.Bl -tag -width Ds
+.It Cm cfg_modules_clone Ns = Ns Ar safe_strings_list
+Modules handling the copy and fork of virtual machines.
+.br
+Default value:
+.Ic 'networking_iface_mac storage_backend' .
+.
+.It Cm cfg_modules_buildcmd Ns = Ns Ar safe_strings_list
+Modules building the Qemu command-line to execute to boot the guest.
+.Pp
+Don't assume that removing a module from this list will automatically disable
+the associated feature, this will make Qemu to use its default behavior which
+may be different (for instance, if no networking parameter is specified Qemu
+enables networking by default, disabling it must be done explicitely, see
+the corresponding settings in
+.Cm vm_networking ) .
+.Pp
+Unless you want to prefix the Qemu command with something or replace this
+command altogether,
+.Cm qemu
+will most likely be the first module to be invoked.
+.br
+Default value:
+.Ic 'qemu boot cpu display keyboard monitor name networking ram storage_cdrom
+.Ic storage_hdd'
+.
+.It Cm cfg_modules_configure_templates Ns = Ns Ar safe_strings_list
+Configuration modules used to select a template.
+.Pp
+Configuration modules are invoked to start a virtual machine when no setting
+file is available.
+.Pp
+The template system allows to alter the virtual machine default settings in
+various ways and may have different functional use, from adapting the settings
+to comply with operating system prerequisites to grouping the virtual machines
+into technical or logical entities
+.br
+Default value:
+.Ic 'autodetect'
+.
+.It Cm cfg_modules_configure_settings Ns = Ns Ar safe_strings_list
+Configuration modules used to define the various vitual machine settings.
+.Pp
+Configuration modules are invoked to start a virtual machine when no setting
+file is available.
+.Pp
+Most of these modules ask the user to enter the associated setting value or
+accept the proposed default value.
+.br
+Default value:
+.Ic 'cpu_count ram_size networking_auto storage_hdd_import
+.Ic storage_hdd1_createsize'
+.El
+.
+.Ss User interface
+.
+.Bl -tag -width Ds
+.It Cm cfg_ui_assumeyes Ns = Ns Op Cm yes Ns | Ns Cm no
+If
+.Ic yes ,
+do not ask any question to the user, assume a positive answer
+.Ic ( y )
+for user confirmation requests and automatically accept the default value for
+multiple choices questions.
+.Pp
+Most
+.Xr vmtools 7
+commands allow to temporarily set this setting to
+.Ic yes
+using the
+.Fl y
+flag.
+.Pp
+Default value:
+.Ic 'no' .
+.
+.It Cm cfg_ui_verbosity Ns = Ns Ar positive_integer
+Makes
+.Xr vmtools 7
+commands to produce more or less output on
+.Pa stderr .
+.Pp
+Most commands allow to set temporarily modify this setting using the
+.Fl q
+(quiet) and
+.Fl v
+(verbose) flags to respectively decrease and increase the verbosity.
+.Pp
+The verbosity levels are as follows:
+.Pp
+.Bl -tag -width "A" -offset indent
+.It Ic 0
+Minimal output (error messages, listening port, etc.).
+.It Ic 1
+Output informational messages like the name of a correctly started or created
+virtual machines.
+.It Ic 2
+Adds progress information on slow tasks (image file creation, lock, etc.),
+progress information may include control character not suitable for log files.
+.It Ic 3
+Provide feedback on each main intermediary step (modules loaded, modified
+virtual machine, etc.).
+.It Ic 4
+Provide deeper information (locks and file management, settings dump, etc.).
+.It Ic 5
+Print each executed shell command.
+.El
+.Pp
+Default value:
+.Ic 2 .
+.El
+.
+.
+.Sh VIRTUAL MACHINES SETTINGS
+.
+These settings describe the devices and environment available to the virtual
+machine guest system.
+.Pp
+These settings are designed to be overridden in virtual machines settings files.
+.
+.Bl -tag -width Ds
+.It Cm vm_home Ns = Ns Op Ar extended_string
+Path to the virtual machine home directory.
+.Pp
+This value is automatically set by the
+.Xr vmtools 7
+commands, there should be no need to set it manually.
+.br
+Default value:
+.Ic ''
+(empty).
+.It Cm vm_name Ns = Ns Op Ar extended_string
+The virtual machine name appears in various locations, like the title bar of
+some display interface and as output of some commands to help the user to
+identify a virtual machine.
+.Pp
+This setting has no direct impact on the guest system environment.
+.Pp
+While there is no global default value, a command such as
+.Xr vmcreate 1
+usually initialize this setting to the name of the current virtual machine home
+directory, or to the name of booted file if the virtual machine has no home
+directory.
+The user however is free to set this setting to any other value.
+.br
+Default setting:
+.Ic ''
+(empty).
+.El
+.
+.Ss Boot
+.
+.Bl -tag -width Ds
+.It Cm vm_boot_order Ns = Ns Op Cm abcdnop
+A combination of letters defining Qemu devices boot order.
+.Pp
+The devices identifiers are as follows:
+.Pp
+.Bl -tag -width "a, b" -offset indent -compact
+.It Cm a , b
+The first and second floppy disk device.
+.It Cm c
+The first hard disk device.
+.It Cm d
+The first CD-ROM device.
+.It Cm n Ns - Ns Cm p
+.\" qemu-system(1) associates three letters (n-p) to four net interfaces (1-4).
+.\" Checking `validate_bootdevices()' defined in `bootdevice.c' shows that
+.\" only the characters in the range n-p are expected to match network devices,
+.\" the typo is therefore on the matchable net interfaces side (1-3 instead of
+.\" 1-4).
+Etherboot from the network adapters 1-3.
+.El
+.Pp
+Default value:
+.Ic 'cd' .
+.
+.It Cm vm_boot_menu Ns = Ns Op Cm yes Ns | Ns Cm no
+If
+.Ic yes ,
+enable the boot media selection menu.
+.Pp
+This menu is handled by the BIOS, and therefore its support and behavior
+directly depends on the selected BIOS image.
+.br
+Default value:
+.Ic 'no' .
+.El
+.
+.Ss CPU
+.
+.Bl -tag -width Ds
+.It Cm vm_cpu_count Ns = Ns Ar positive_integer
+Number of virtual CPUs available for the guest.
+.br
+Default value:
+.Ic 2 .
+.
+.It Cm vm_cpu_type Ns = Ns Ar safe_string
+Type of virtual CPUs available for the guest.
+.Pp
+The list of available CPU models is obtained by passing:
+.Pp
+.Dl Fl cpu Ic help
+.Pp
+to the Qemu command.
+.br
+Default value:
+.Ic host .
+.El
+.
+.Ss Display
+.
+.Bl -tag -width Ds
+.Sm off
+.It Cm vm_display_device = Cm cirrus | std | vmware | qxl | tcx | cg3 | none
+.Sm on
+Select the display device to emulate to the guest.
+.Pp
+Available display devices are as follows:
+.Pp
+.Bl -tag -width "vmware" -compact -offset indent
+.It Cm cirrus
+For legacy systems.
+.It Cm std
+For 2000-era systems (Windows XP and higher).
+.It Cm vmware
+Unix: natively supported by any modern XFree86/Xorg, Windows: requires
+appropriate drivers to be installed in the guest.
+.It Cm qxl
+Automativally selected when
+.Cm Cm vm_display_type
+is set to
+.Ic Cm spice .
+.It Cm tcx
+For Sun machines.
+.It Cm cg3
+For legacy Sun machines.
+.It Cm none
+No display device is available for the guest.
+.Cm vm_display_type
+is ignored.
+.El
+.Pp
+See the description of the
+.Fl vga
+flag in
+.Xr qemu-system 1
+for more details.
+.br
+Default value:
+.Ic 'std' .
+.
+.It Cm vm_display_iface Ns = Ns Ar ip_address
+Listening interface when a remote display type is used.
+.Pp
+This setting has an effect only when
+.Cm vm_display_type
+is set to either
+.Ic spice
+or
+.Ic vnc .
+.Pp
+The special value
+.Ic 0.0.0.0
+allows to listen on all interface, but it is generally a bad idea security-wise
+to listen on external interfaces.
+For better security, it is recommended to listen only on  local loopback
+interface and tunnel the remote desktop application through a SSH tunnel to
+access it.
+.\" TODO: Link to a more detailed procedure.
+.br
+Default value:
+.Ic '127.0.0.1' .
+.
+.It  Cm vm_display_port Ns = Ns Op Ar port_number
+Listening TCP port when a remote display type is used.
+If the port is not free, the virtual machine will fail to start.
+.Pp
+This setting has an effect only when
+.Cm vm_display_type
+is set to either
+.Ic spice
+or
+.Ic vnc .
+.Pp
+Leaving this setting empty enables automatic port selection (see the
+.Cm vm_display_portmin
+setting).
+.br
+Default value:
+.Ic ''
+(empty).
+.
+.It  Cm vm_display_portmin Ns = Ns Ar port_number
+First port to try when
+.Cm vm_display_port
+is empty.
+If the port is not free, the next port will be tried until a free port is found.
+.Pp
+This setting is ignored if
+.Cm vm_display_port
+is not empty.
+.Pp
+.\" See <https://bugs.launchpad.net/qemu/+bug/1089496>.
+Qemu hardcodes a minimum value of 5900 for the VNC protocol, so you should not
+set a lower value unless you intend to never use the VNC protocol.
+See
+.Lk https://bugs.launchpad.net/qemu/+bug/1089496
+.Pp
+You are free however to set a higher value in a virtual machine settings file
+or in a template for instance to allocate different port ranges to different
+virtual machines groups.
+.br
+Default value:
+.Ic 5900 .
+.
+.Sm off
+.It  Cm vm_display_type = Cm vnc | spice | sdl | gtk | none
+.Sm on
+Select display output to use.
+.Pp
+This setting is ignored if
+.Cm vm_display_device
+is set to
+.Ic none .
+.Pp
+When using a headless display mode, the Qemu hypervisor process acts as a
+server and unless specified otherwise opens a TCP port in listen mode (see
+.Cm vm_display_iface , vm_display_port
+and
+.Cm vm_display_portmin
+settings to define the listening interface and port).
+.Pp
+The available headless display output are as follow:
+.Bl -tag -width "spice" -offset indent
+.It Cm vnc
+The Qemu hypervisor acts as a VNC server. This is the historical and most
+widely supported headless output mode as it has no requirement guest-side.
+.It Cm spice
+Automatically sets
+.Cm vm_display_device
+to
+.Ic qxl .
+More efficient than VNC, this requires the guest to have a driver for the QXL
+paravirtualized graphic card device. This is natively supported with any
+recent X.org, on Windows a freely available driver needs to be installed.
+.It Cm none
+The Qemu hypervisor will not produce any display output (and will, therefore,
+not open any TCP port).
+The guest however will see have the display device selected using the
+.Cm vm_display_device
+setting enabled.
+.El
+.Pp
+When using a windowed display mode, the Qemu hypervisor software acts as a
+client of the host's window manager to open a graphical window. Depending on
+the window server settings, the display may be redirected to a remote host, but
+when using a standard X server this is less effcient than using VNC or SPICE.
+.Pp
+The available windowed display output are as follow:
+.Bl -tag -width "sdl" -offset indent
+.It Cm sdl
+This is the most basic windowed display mode. Some Linux distributions which
+enable only headless modes (like Alpine Linux) do not support this mode, appart
+than that it is quite widely supported.
+.It Cm gtk
+This windowed display mode has more features. Due to the amount of library
+dependencies, some Linux distributions (like Debian) choose not to enable it.
+.\" TODO: How to list available modes?
+.El
+.Pp
+More information can be found in the description of the
+.Fl display
+and
+.Fl spice
+flag in the
+.Xr qemu-system 1
+man page.
+More information on distribution-specific limitations are available online:
+.Pp
+.Lk https://bugs.alpinelinux.org/issues/6609
+.Lk https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=839695
+.Pp
+Default value:
+.Ic 'sdl' .
+.El
+.
+.Ss Keyboard
+.
+.Bl -tag -width Ds
+.It  Cm vm_keyboard_mapping Ns = Ns Op Ar safe_string
+Select a keyboard mapping.
+.Pp
+Leave this setting empty to let Qemu detect it, but this may be unreliable
+specially when using remote displays.
+.Pp
+Available keymaps should be located in
+.Pa /usr/share/qemu/keymaps .
+.Pp
+This setting is a good candidate to be overridden in system-wide or user
+settings.
+.br
+Default value:
+.Ic ''
+(empty).
+.El
+.
+.Ss MacOS
+.
+Specific settings for running Apple MacOS guests.
+.
+.Bl -tag -width Ds
+.It  Cm vm_macos_osk Ns = Ns Op Ar extended_string
+This key stored in Apple's hardware SMC (System Management Center) chip is
+used to decrypt some MacOS system files, ensuring the system can be run only
+on genuine Apple hardware. Qemu does not implement (yet) any passthrough so
+you must fetch the key from your own hardware before trying to start an OSX
+guest in Qemu.
+.Pp
+More information is available online:
+.Pp
+.Lk http://www.contrib.andrew.cmu.edu/~somlo/OSXKVM/
+.Pp
+This setting can be set system-wide so it will be automatically shared between
+all virtual machines running on the same host.
+.br
+Default value:
+.Ic ''
+(empty).
+.El
+.
+.Ss Networking
+.
+Networking setting are divided in two groups:
+.Bl -bullet -offset indent
+.It
+The default settings whose values are used to override unset interface settings.
+.It
+The interface settings, their name contain the
+.Cm iface Ns Ar n
+string where
+.Ar n
+is a counter (the first interface will have its settings variable labelled
+.Cm iface1 ,
+the second one
+.Cm iface 2 ,
+etc.).
+.Pp
+.Ar n
+does not need to be incremental: the interface 4 may be enabled while the
+interface 3 remains undefined.
+Two different interfaces cannot share an indentical value for
+.Ar n .
+This label has only a meaning from the hypervisor perspective, its exact value
+has no impact on the guest.
+.El
+.Pp
+.
+.Bl -tag -width Ds
+.It Cm vm_networking_default_device Ns = Ns Ar extended_string
+Default network virtual device type.
+This setting replaces empty
+.Cm vm_networking_iface Ns Ar n Ns Cm _device
+settings.
+.Pp
+The list of available devices is obtained by passing:
+.Pp
+.Dl Fl device Cm help
+.Pp
+to the Qemu command, section
+.Em Network devices .
+.Pp
+This setting accepts supplementary, comma-separated options to pass to the
+virtual device.
+The list of available options for a particular device is obtained by passing:
+.Pp
+.Dl Fl device Ar device_name Ns Cm ,help
+.Pp
+to the Qemu command.
+.br
+Default value:
+.Ic 'e1000-82545em' .
+.
+.It Cm vm_networking_default_mac Ns = Ns Op Ar extended_string
+Default MAC address.
+If empty, a random MAC address will be used.
+A partial address is taken as a MAC prefix, and dynamically completed using a
+random value.
+.Pp
+This setting replaces empty
+.Cm vm_networking_iface Ns Ar n Ns Cm _mac
+settings.
+.Pp
+This setting may contain up to six groups of two hexadecimal digits separated
+by colons.
+A final colon may be present or omitted.
+It is not possible to break a group of two hexadecimal digits.
+The remaining digits are completed using random digits.
+.Pp
+It is recommended to use valid Organizationally Unique Identifier (OUI), at the
+very least the multicast bit must be set to zero (multicast MAC addresses
+are not authorized in Ethernet frames' sender field).
+.Pp
+If this setting is empty, a MAC address is generated with the multicast bit set
+to zero, the locally administered bit set to one, and all other bits set to
+random values.
+.Pp
+See also
+.Xr vmrndmac 1 .
+.br
+Default value:
+.Ic '52:54:00' .
+.
+.It Cm vm_networking_default_mode Ns = Ns Ar extended_string
+Default operating mode.
+This setting replaces empty
+.Cm vm_networking_iface Ns Ar n Ns Cm _mode
+settings.
+.Pp
+This setting accepts supplementary, comma-separated options to apply to the
+selected mode.
+Available options vary greatly depending on the mode used.
+.Pp
+Here are a few examples:
+.Bl -tag -width Ds
+.It Ic 'user'
+Use the default user mode network stack which requires no administrator
+privilege to run.
+.Pp
+The user mode network stack simulates a network where by default the host
+system acts as the default gateway.
+External hosts will see the connection attempts made by the guests as coming
+from the host system, and external hosts will be unable to directly contact the
+guest systems.
+.Pp
+Qemu provides several services available for this virtual network, including a
+DHCP server enabled by default which assigns local addresses to the guests
+connected to this network (the address range used in this internal network is
+independant from the range used on the host's physical network).
+Other notable services are VLAN-based network segmentation, TFTP and BOOTP
+servers to store boot images and a SMB server allowing to share files between
+the guest and host system.
+None of these additional services is enabled by default.
+.It Ic 'user,restrict=on,vlan=2,hostfwd=tcp:127.0.0.1:12345-:22'
+This example extends from the previous case by changing a few defaults:
+.Bl -tag -width Ds
+.It Ic restrict=on
+The host system will not forward by default anymore packets coming fom the
+guests to the external network.
+This has the consequence of isolating the guest from any external network.
+.It Ic vlan=2
+The guest will be connected to the virtual network VLAN 2 instead of the
+default VLAN 0.
+It will be able to communicate only with guests also connected to VLAN 2, and
+will be unable to communicate with hosts connected to other VLAN.
+.Pp
+It is possible for a guest to have several interfaces connected to different
+VLANs, thus allowing to build a complex network architecture.
+.It Ic hostfwd=tcp:127.0.0.1:12345-:22
+The Qemu hypervisor process will listen on port 12345 on the host interface
+127.0.0.1, and forward all incoming connections to the guest on port 22.
+This particular settings allows to connect to the guest from the host using SSH.
+.Pp
+Removing the host interface
+.Ic ( hostfwd=tcp::12345-:22 )
+allows the Qemu hypervisor to listen on all interfaces, effectively
+allowing external hosts to connect to the guest's port 22 while still
+preventing them from reaching any other guest's port (note that the host
+firewall must be configured to allow incoming connections).
+.El
+.Pp
+These options, given here for the sake of the example, can be also used
+independently.
+.It Ic 'bridge'
+Use the default network helper (usually
+.Pa /usr/lib/qemu/qemu-bridge-helper )
+to automatically create and delete a TAP network interface when the virtual
+machine starts and stop, providing  a direct access to the external network to
+the guest.
+.Pp
+External hosts will see the guest as a standalone system, unrelated to the host
+system.
+The guest will have its own IP on the external network, outgoing connections
+will have the guest IP as source and external hosts will be able to directly
+reach the guest system, without involving any routing the Qemu hypervisor (for
+this reason this mode offers better performances than the user mode network
+stack).
+.Pp
+This method has three main prerequisites:
+.Pp
+.Bl -bullet
+.It
+A bridge interface must be created on the system.
+.br
+Qemu attempts by default to use a bridge interface named
+.Ic br0 ,
+the
+.Cm br= Ns Ar bridge_name
+option allows to specify another name if needed.
+The exact procedure to define a bridge interface depends on the system used and
+your current network settings, refer to your system documentation.
+.It
+The helper is not executable by default, must be explicitely enabled and be
+able gain sufficient privileges to create the TAP network interface.
+.br
+The safest way to do so is to make it executable only to the members of the
+.Ic kvm
+or
+.Ic libvirtd
+group (or any equivalent group, the exact name depends on your system) and use
+Linux capabilities to grant it network administration privileges:
+.Pp
+.Bd -literal -offset indent
+.Ic chown root:kvm \e
+.Ic "    " /usr/lib/qemu/qemu-bridge-helper
+.Ic chgrp 750 /usr/lib/qemu/qemu-bridge-helper
+.Ic setcap cap_net_admin=ep \e
+.Ic "    " /usr/lib/qemu/qemu-bridge-helper
+.Ed
+.Pp
+Note that those changes may be reverted by any system update updating the Qemu
+binaries.
+.It
+The helper must be explicitely authorized to use the bridge interface created
+earlier.
+.br
+This is usually defined in the file
+.Pa /etc/qemu/bridge.conf
+(replace
+.Ic br0
+with your own bridge interface name):
+.Pp
+.Dl Ic echo \*qallow br0\*q >/etc/qemu/bridge.conf
+.Pp
+.El
+.El
+.Pp
+For more information on available modes and options, see the description of the
+.Fl netdev
+flag in
+.Xr qemu-system 1 .
+.br
+Default value:
+.Ic 'user' .
+.
+.Sm off
+.It Cm vm_networking_iface Ar n Cm _device = Op Ar extended_string
+.Sm on
+Device type of the virtual network interface
+.Ar n .
+.Pp
+If
+.Cm vm_networking_iface Ns Ar n Ns Cm _enable
+is not set to
+.Cm yes ,
+this setting is ignored.
+If no value is provided,
+.Cm vm_networking_default_device
+is used instead.
+.Pp
+See the description of
+.Cm vm_networking_default_device
+for more information.
+.br
+Default value:
+.Ic ''
+(empty).
+.
+.Sm off
+.It Cm vm_networking_iface Ar n Cm _enable = Ns Op Cm yes Ns | Ns Cm no
+.Sm on
+If set to
+.Ic yes ,
+enable the virtual network interface
+.Ar n .
+Otherwise, all other settings related to this interface are ignored.
+.Pp
+Note that the settings configuration module
+.Cm networking_auto
+automatically enables the first network interface on new virtual machines using
+the default settings.
+See the enabled modules in
+.Cm cfg_modules_configure_settings .
+.br
+Default value:
+.Ic ''
+(empty).
+.
+.Sm off
+.It Cm vm_networking_iface Ar n Cm _mac = Op Ar extended_string
+.Sm on
+MAC address of the virtual network interface
+.Ar n .
+.Pp
+If
+.Cm vm_networking_iface Ns Ar n Ns Cm _enable
+is not set to
+.Cm yes ,
+this setting is ignored.
+If no value is provided,
+.Cm vm_networking_default_mac
+is used instead.
+.Pp
+See the description of
+.Cm vm_networking_default_mac
+for more information.
+.br
+Default value:
+.Ic ''
+(empty).
+.
+.Sm off
+.It Cm vm_networking_iface Ar n Cm _mode = Op Ar extended_string
+.Sm on
+Operating mode for the virtual network interface
+.Ar n .
+.Pp
+If
+.Cm vm_networking_iface Ns Ar n Ns Cm _enable
+is not set to
+.Cm yes ,
+this setting is ignored.
+If no value is provided,
+.Cm vm_networking_default_mode
+is used instead.
+.Pp
+See the description of
+.Cm vm_networking_default_mode
+for more information.
+.br
+Default value:
+.Ic ''
+(empty).
+.El
+.
+.Ss Qemu
+.
+.Bl -tag -width Ds
+.It Cm vm_qemu_arch Ns = Ns Ar safe_string
+Name of the architecture emulated by Qemu.
+.Pp
+Qemu supports various architectures, the list of available ones depends on your
+compilation options and installed packages.
+Common architectures are
+.Ic x86_64
+and
+.Ic i386 .
+.Pp
+.\" http://qemu.11.n7.nabble.com/Qemu-devel-qemu-system-i386-vs-qemu-system-x86-64-td155476.html
+When using KVM (kernel-based virtualization), no difference is made between
+.Ic x86_64
+and
+.Ic i386
+modes.
+When using TCG (user-mode virtualization), 32-bits applications will execute
+faster if the architecture is explicitely set to
+.Ic i386 .
+.br
+Default value:
+.Ic 'x86_64' .
+.
+.It Cm vm_qemu_compress Ns = Ns Op Cm yes Ns | Ns Cm no
+If
+.Ic yes ,
+compress copied and converted images.
+.Pp
+The compression occurs only during the copy and conversion process, newly
+created empty images and data written by a running guest is not compressed to
+limit the impact on performance.
+.br
+Default value:
+.Ic 'no' .
+.
+.It Cm vm_qemu_daemonize Ns = Ns Op Cm yes Ns | Ns Cm no
+Let the Qemu hypervisor process run in the background.
+.Pp
+If
+.Ic yes
+and if the virtual machine has a home directory, a socket file will be created
+(see
+.Cm cfg_file_monitor
+setting) providing access to the Qemu monitor shell allowing to interactively
+control the Qemu hypervisor.
+See
+.Xr vmmon 1
+to access this shell.
+.Pp
+If
+.Ic no ,
+the virtual machine will be started in interactive mode: Qemu will not go to
+the background but will instead directly provide the Qemu monitor shell.
+.br
+Default value:
+.Ic 'yes' .
+.
+.It Cm vm_qemu_params Ns = Ns Op Ar extended_strings_list
+Space-separated list of supplementary parameters to pass to the Qemu
+command-line.
+.Pp
+The parameters containing spaces or special characters must be properly escaped,
+as indicated in the extended list description in the beginning of this man page.
+.Pp
+Note that KVM is enabled by default.
+This provides near native performance for he guest system, but on some system
+this requires the user to belong to a certain group (like
+.Dq kvm ) .
+.br
+Default value:
+.Ic '-enable-kvm -usbdevice tablet' .
+.
+.It Cm vm_qemu_shutdown_timeout Ns = Ns Ar positive_integer
+The maximum amount of time (in seconds) to wait when shutting down a virtual
+machine.
+.Pp
+See
+.Xr vmdown 1
+for more information on the virtual machine shutdown process and options.
+.br
+Default value:
+.Ic 20
+.El
+.
+.Ss RAM
+.
+.Bl -tag -width Ds
+.It Cm vm_ram_size Ns = Ns Ar safe_string
+Amount of RAM allocated to the guest.
+.Pp
+This setting must be a number expressed either in Megabytes (it must be
+followed by a
+.Ic M )
+or in Gigabytes (it must be followed by a
+.Ic G ) .
+.Pp
+The RAM amount is probably one of the most vital settings to allow a proper
+behavior of the guest system.
+.Pp
+.Bl -bullet -offset indent
+.It
+A value too low for the guest may turn an healthy guest into a senile slug,
+making the guest slow, irresponsive and affected by a wide range of issues
+indirectly caused by the lack of usable RAM, including but not limited to
+guest boot failures.
+.It
+A value to high for the host will basically have the same consequences, this time
+not because of the lack of usable RAM for the guest but because of the
+inability for the host to properly execute the Qemu hypervisor process.
+.El
+.Pp
+A good rule of thumb is that, under a normal load, a system should have
+.Em at least
+20% of its RAM free.
+.Pp
+.Dq Free
+means doesn't mean memory used by the system cache,
+.Dq free
+means that the memory is currently not used at all so it is immediately
+available upon request and the system has enough spare space to do all its
+management duties.
+Don't expect the swap to compensate a lack of memory: the role of the swap is
+to act as an emergency solution, an alternative to not let the kernel kill
+random processes as a desperate attempt to keep the system up.
+.Pp
+There is usually no side-effect in changing the amount of RAM of a stopped
+virtual machine.
+.br
+Default value:
+.Ic '2G' .
+.El
+.
+.Ss Storage
+.
+There are three access modes to a storage backend:
+.Pp
+.Bl -tag -width Ds -offset indent
+.It Read-write:
+The storage is seen as writable by the guest, and guest's write operations are
+applied to the storage backend.
+.Pp
+This is the most common mode for hard disk images.
+.It Snapshot:
+Also known as non-persistant mode, the storage is seen as writable by the guest
+but guest's write operations are not applied to the storage backend.
+Instead, they are stored in a temporary area and are deleted when the virtual
+machine exits.
+This allows to rollback to the same initial state upon each start of the
+virtual machine.
+.Pp
+Note that the rollback is done upon a restart of the virtual machine itself.
+All modifications are kept upon guest operating system restarts.
+.Pp
+Also note that Qemu still provides a way (the Qemu monitor
+.Ic commit
+command) to apply all temporarily stored write operations to the backend
+resource accessed in snapshot mode.
+This may or may not be a wanted feature.
+In case there is a strong requirement for the backend resource to remain
+unmodified, it is advised to work using a copy instead of the original file
+and/or protect the file by unsetting its write bit:
+.Pp
+.Dl Ic chmod a-w Ar image_file
+.Pp
+When accessing a file with the write bit unset, Qemu seem to transparently
+switch into snapshot mode even if the file access mode was explicitely set to
+read-write.
+.It Read-only:
+The storage is seen as read-only by the guest, all write attempt result in a
+failure.
+.Pp
+This mode is commonly used for CD and DVD reader virtual devices.
+IDE hard disks cannot be read-only.
+.El
+.Pp
+The effective access mode is the result of three criterion:
+.Pp
+.Bl -enum -offset indent -compact
+.It
+The storage backend default mode.
+.br
+The default mode depends on the device type and path, see
+.Cm vm_storage_cdrom1_backend
+and
+.Cm vm_storage_hdd1_backend
+settings description for more information.
+.It
+The access mode provided as prefix in the storage path.
+.br
+See below for more information on storage path prefixes.
+.It
+The highest access mode allowed by the
+.Cm vm_storage_rwmode
+setting.
+.br
+See the setting's decription for more information.
+.El
+.Pp
+The latest of these criterion wins.
+.Pp
+The storage backend path itself is composed of two main parts:
+.Bl -bullet -offset indent
+.It
+An optional prefix explicitely stating the access mode to use:
+.Pp
+.Bl -tag -width snap: -compact -offset indent
+.It Cm wr:
+Read-write mode.
+.It Cm snap:
+Snapshot mode.
+.It Cm ro:
+Read-only mode.
+.El
+.Pp
+The colon is part of the prefix and acts as a separator between the prefix and
+the storage backend location.
+.It
+A storage backend location:
+.Pp
+The storage backend location may be of several types: a local file path, a
+local directory path, a local device path or a remote URL.
+The features, limitations and default behavior vary, see the description of the
+.Cm vm_storage_cdrom1_backend
+and
+.Cm vm_storage_hdd1_backend
+settings for more information.
+.El
+.Pp
+See
+.Xr vmup 1
+for several examples of backend paths, both with and without a prefix.
+.Pp
+.Bl -tag -width Ds
+.It Cm vm_storage_cdrom1_backend Ns = Ns Op Ar extended_string
+First virtual CD-ROM reader device backend.
+.Pp
+This is usually one of the following:
+.Pp
+.Bl -bullet -offset indent -compact
+.It
+A path to an ISO file.
+.It
+A path to a local directory.
+.br
+An ISO image storing the content of the directory will be generated on the
+fly, attached to the guest system, and deleted when the virtual machine exits
+or otherwise close it.
+.Xr genisoimage 1
+must be available on the host system for this feature to be available.
+.It
+A path to one of host's physical CD/DVD reader device file (like
+.Pa /dev/cdrom ) .
+.It
+A URL to a remotely hosted ISO file.
+.br
+Qemu natively support FTP(S), HTTP(S), SSH and TFTP protocols.
+.El
+.Pp
+Read-only is the only supported mode with virtual CD-ROM reader devices,
+read-write and snapshot modes are not supported.
+A CD-ROM device may be enabled (see
+.Cm vm_storage_cdrom1_enable
+setting) with no backend associated with it: the guest will see as a CD-ROM
+reader with no disk inserted.
+.Pp
+.\" TODO: Add a vmtool command to manipulate removable media devices
+Currently it is necessary to manually access the Qemu monitor shell to
+manipulate the CD-ROM reader device (this will change in a future version of
+.Xr vmtools 7 ) .
+.Pp
+To manage the guest's virtual CD-ROM device:
+.Pp
+.Bl -enum -offset indent -compact
+.It
+Open it Qemu monitor shell using
+the
+.Xr vmmon 1
+command.
+.It
+Type the following command to list available virtual block devices:
+.Pp
+.Dl (qemu) Ic info block
+.Pp
+The virtual CD-ROM device should have an identifier along the lines of
+.Em ide1-cd0 .
+.It
+If there is already a disk present in the CD-ROM reader device, eject it using
+the following command:
+.Pp
+.Dl (qemu) Ic eject Ar device_identifier
+.Pp
+.It
+Now mount the new disk backend:
+.Pp
+.Dl (qemu) Ic change Ar device_identifier file_path
+.Pp
+.El
+.Pp
+Default value:
+.Ic ''
+(empty).
+.
+.It Cm vm_storage_cdrom1_enable Ns = Ns Op Cm yes Ns | Ns Cm no
+If set to
+.Ic yes ,
+the first virtual CD-ROM device is enabled.
+.Pp
+See
+.Cm vm_storage_cdrom1_backend
+setting for more information.
+.Pp
+Default value:
+.Ic 'no' .
+.
+.It Cm vm_storage_cdrom2_backend Ns = Ns Op Ar extended_string
+Second CD-ROM device backend.
+.Pp
+See
+.Cm vm_storage_cdrom1_backend
+setting for more information.
+.Pp
+Default value:
+.Ic ''
+(empty).
+.
+.It Cm vm_storage_cdrom2_enable Ns = Ns Op Cm yes Ns | Ns Cm no
+If set to
+.Ic yes ,
+the second virtual CD-ROM device is enabled.
+.Pp
+See
+.Cm vm_storage_cdrom1_backend
+setting for more information.
+.Pp
+Default value:
+.Ic 'no' .
+.
+.It Cm vm_storage_hhd1_backend Ns = Ns Op Ar extended_string
+First hard disk device backend.
+.Pp
+This is usually one of the following:
+.Bl -bullet -offset indent
+.It
+A path to a hard disk image file.
+.Pp
+The preferred formats are QCow2 and RAW.
+Third-party and legacy image format are supported, but will usually be
+accessible only in snapshot mode.
+The
+.Xr vmcreate 1
+and
+.Xr vmup 1
+commands also propose to automatically convert such images to the QCow2 format.
+Images in
+.Pa .ova
+format
+.Em must
+be converted as Qemu cannot handle them natively.
+.It
+A path to a directory.
+.Pp
+This directory content will be presented to the guest as a virtual VFAT (Qemu
+VVFAT) hard disk.
+This feature has a few limitations:
+.Pp
+.Bl -dash -offset indent -compact
+.It
+The content of a directory shared this way must not be changed by the host
+while the guest is running.
+.It
+The total size of this directory is limited to 504MB.
+.It
+While natively supported by Qemu, this is not a widely used feature which is
+not even mentionned in the
+.Xr qemu-system 1
+man page, so you may want to avoid it for sensitive tasks (you may either mount
+the directory as a CD-ROM reader, use SMB sharing or, for Unix and Unix-like
+guest use the VirtFS paravirtualized filesystem).
+.El
+.Pp
+By default the directory is mounted in read-only (actually snapshot) mode.
+It is possible to mount it in read-write mode by using an explicit
+.Ic rw:
+prefix, however this should be done cautiously (see the last bullet).
+.It
+A path to a local device file (like
+.Pa /dev/sda ) .
+Qemu handles it like a RAW storage file.
+.It
+A URL to a remotely hosted image file or a network storage. Qemu natively
+supports FTP(S), HTTP(S), iSCSI, NBD, SSH and TFTP.
+Such files are loaded in snapshot mode by default, except iSCSI and NBD URLs
+which are accessed in read-write mode by default.
+See
+.Xr qemu-system 1
+to get more information regarding the URL syntax.
+.El
+.Pp
+Unless stated otherwise, hard disk images are access in read-write mode by
+default.
+Qemu only supports the snapshot and read-write mode for hard disk devices,
+read-only mode is not supported.
+When a hard disk is enabled (see
+.Cm vm_storage_hdd1_enable
+setting) it is mandatory to provide a backend image.
+Default value:
+.Ic ''
+(empty).
+.
+.It Cm vm_storage_hhd1_createsize Ns = Ns Op Ar safe_string
+Size of a new empty image to create for the first virtual hard disk.
+.Pp
+This setting must be expressed either in Megabytes, Gigabytes or Terabytes and
+must be followed by the appropriate unit (respectively
+.Ic M , G
+or
+.Ic T ) .
+.Pp
+When this setting is set,
+.Cm vm_storage_hdd1_backend
+must be a local file path.
+The file designated by this setting will be created, if it already exists it
+will be overwriten.
+.Pp
+This setting is mainly used during the creation of a new virtual machine and
+is not stored in the virtual machine settings (otherwise the image woud be
+oerwriten at each start of the virtual machine).
+.Pp
+It may also be used to reset the storage of a virtual machine by passing an
+option such as
+.Fl o Ic vm_storage_hhd1_createsize=20G
+to
+.Xr vmup 1 .
+.Pp
+If you just want your virtual machine data to be non-persistent, consider using
+snapshot mode.
+.br
+Default value:
+.Ic ''
+(empty).
+.
+.It Cm vm_storage_hdd1_enable Ns = Ns Op Cm yes Ns | Ns Cm no
+If set to
+.Ic yes ,
+the first virtual hard disk device is enabled.
+.Pp
+See
+.Cm vm_storage_hdd1_backend
+setting for more information.
+.Pp
+Default value:
+.Ic 'no' .
+.
+.It Cm vm_storage_hhd2_backend Ns = Ns Op Ar extended_string
+Second hard disk device backend.
+.Pp
+See
+.Cm vm_storage_hdd1_backend
+setting for more information.
+.Pp
+Default value:
+.Ic ''
+(empty).
+.
+.It Cm vm_storage_hhd2_createsize Ns = Ns Op Ar safe_string
+Size of a new empty image to create for the second virtual hard disk.
+.Pp
+See
+.Cm vm_storage_hhd1_createsize
+setting for more information.
+.Pp
+Default value:
+.Ic ''
+(empty).
+.
+.It Cm vm_storage_hdd2_enable Ns = Ns Op Cm yes Ns | Ns Cm no
+If set to
+.Ic yes ,
+the second virtual hard disk device is enabled.
+.Pp
+See
+.Cm vm_storage_hdd1_backend
+setting for more information.
+.Pp
+Default value:
+.Ic 'no' .
+.
+.Sm off
+.It Cm vm_storage_rwmode = Cm rw | snap | ro
+.Sm on
+Maximum access mode allowed for storage backends:
+.Bl -tag -width snap -offset indent
+.It Cm rw
+There is no restriction: backends supporting it are accessed in read-write
+mode.
+.Pp
+Note that this setting does not enforce read-write mode, it only allows it.
+To enforce the read-write mode to be used on a certain device it still needs to
+be explicitely enabled using the
+.Ic rw:
+storage path prefix.
+.It Cm snap
+Storage backend which would otherwise be accessed in read-write are accessed in
+snapshot mode instead.
+Storage accessed in snapshot mode or in read-write mode are not affected.
+.It Cm ro
+Read-only access is enforced to all storage backends.
+.El
+.Pp
+The
+.Xr vmcreate 1
+and
+.Xr vmup 1
+commands allow to set this setting on a command-line basis, using the
+.Fl s
+(snapshot mode) and
+.Fl r
+(read-only mode) flags.
+.br
+Default value:
+.Ic 'rw' .
+.El
+.
+.
+.Sh ENVIRONMENT
+.
+.Bl -tag -width Ds
+.It Ev TMPDIR
+Default location to store temporary files, by default
+.Pa /tmp .
+.
+.It Ev XDG_CONFIG_HOME
+Location of user's configuration files, by default
+.Pa ~/.config .
+.El
+.
+.
+.Sh FILES
+.
+.Bl -tag -width Ds
+.It Pa /usr/local/lib/vmtools
+Libraries shared by the vmtools project utilities.
+.It Pa /usr/local/share/vmtools/modules/clone
+Modules handling the virtual machine copying process.
+.It Pa /usr/local/share/vmtools/vmtools.conf
+Virtual machine default settings, see
+.Xr vmtools.conf 5 .
+.El
+.Pp
+Moreover, the content of
+.Pa /usr/local/share/vmtools
+can be overridden in the following locations (in the order of precedence):
+.Bl -tag -width Ds
+.It ~/.config/vmtools
+User overrides (if
+.Cm cfg_include_userhome
+is set to
+.Dq yes ) .
+.It /etc/vmtools
+System-wide overrides.
+.El
+.
+.
+.Sh SEE ALSO
+.
+.Xr vmcreate 1 ,
+.Xr vminfo 1 ,
+.Xr vmtools 7
+.
+.
+.Sh REPORTING BUGS
+.
+Please send bug reports to the
+.Lk http://github.com/WhiteWinterWolf/vmtools/issues "vmtools issues page" .
+.
+.\" ############################################################################
+.\" ### /usr/local/share/man/man5/vmtools.conf.5.gz END
+.\" ############################################################################

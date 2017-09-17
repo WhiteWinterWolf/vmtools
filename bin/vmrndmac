@@ -1,0 +1,82 @@
+#! /bin/sh -efu
+################################################################################
+### /usr/local/bin/vmrndmac BEGIN
+################################################################################
+#
+# Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+#
+# This file is part of vmtools.
+#
+# vmtools is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+################################################################################
+
+usage="Generate a random MAC address.
+
+Usage:
+  vmrndmac [-h] [prefix]
+
+Options:
+  -h    Show usage information.
+"
+
+
+################################################################################
+# Global variables
+################################################################################
+
+# User-chosen MAC prefix.
+prefix=''
+
+
+################################################################################
+# Functions
+################################################################################
+
+# Loading shared libs (loading them all is faster than nitpicking).
+for f in $( find '/usr/local/lib/vmtools' -name '*.inc.sh' )
+do
+	. "$f" || exit 1
+done
+
+
+################################################################################
+# Parse parameters
+################################################################################
+
+include_globalconf || exit 1
+
+[ "${1:-}" = '--' ] && shift
+
+# The usage message needs the settings to be loaded to show the default prefix.
+if [ "${1:-}" = '-h' ]
+then
+	printf '%s\n' "$usage"
+	exit 0
+fi
+
+prefix=${1-}
+
+
+################################################################################
+# Main
+################################################################################
+
+macaddr=$( net_random_mac -- ${prefix:+"$prefix"} ) || exit 1
+
+printf '%s\n' "$macaddr"
+
+################################################################################
+### /usr/local/bin/vmrndmac END
+################################################################################

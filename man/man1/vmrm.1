@@ -1,0 +1,194 @@
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmrm.1.gz BEGIN
+.\" ############################################################################
+.\"
+.\" Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+.\"
+.\" This file is part of vmtools.
+.\"
+.\" vmtools is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
+.\"
+.\" ############################################################################
+.
+.Dd June 3, 2017
+.Dt VMRM 1
+.Os vmtools
+.
+.
+.Sh NAME
+.
+.Nm vmrm
+.Nd delete a virtual machine home directory
+.
+.
+.Sh SYNOPSIS
+.
+.Nm
+.Op Fl hkqrvy
+.Ar vmhome_dir ...
+.
+.
+.Sh DESCRIPTION
+.
+Delete a virtual machine home directory.
+.Pp
+.Ar vmhome_dir
+must be a valid virtual machine home directory.
+It must not be running, must have no child (unless
+.Fl r
+has been used) and the user will be prompted before deleting any file (unless
+.Fl y
+has been used).
+.Pp
+If the
+.Ar vmhome_dir
+directory becomes empty, it will be deleted, otherwise a warning message will be
+displayed.
+.
+.
+.Sh OPTIONS
+.
+The options are as follows:
+.
+.Bl -tag -width Ds
+.It Fl h
+Show usage information summary then exit.
+.
+.It Fl k
+Keep the storage image and other unrecognized files, only select
+.Xr vmtools 7
+own files for deletion.
+.
+.It Fl q
+Decrease verbosity.
+Add several
+.Fl q
+options to decrease verbosity even more
+.Fl ( qq
+by default to get minimal output).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl v
+to increase the verbosity level.
+.
+.It Fl r
+Recursive mode: remove all child virtual machines too.
+.Pp
+No child virtual machine must be running.
+Child virtual machines located in external directories will also be deleted.
+Unrelated virtual machines located in
+.Ar vmhome_dir
+subdirectories are not affected.
+.
+.It Fl v
+Increase verbosity.
+Add several
+.Fl v
+options to increase verbosity even more
+.Fl ( vvv
+by default to get the most verbose output, including debugging messages).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl q
+to decrease the verbosity level.
+.
+.It Fl y
+Don't ask any question: accept all confirmation requests and automatically
+select the default answer in any other situation.
+.Pp
+Use this option with
+.Em great care :
+no confirmation will be asked before deleting or overwriting any files!
+.El
+.
+.
+.Sh ENVIRONMENT
+.
+.Bl -tag -width Ds
+.It Ev TMPDIR
+Default location to store temporary files, by default
+.Pa /tmp .
+.
+.It Ev XDG_CONFIG_HOME
+Location of user's configuration files, by default
+.Pa ~/.config .
+.El
+.
+.
+.Sh FILES
+.
+.Bl -tag -width Ds
+.It Pa /usr/local/lib/vmtools
+Libraries shared by the vmtools project utilities.
+.It Pa /usr/local/share/vmtools/vmtools.conf
+Virtual machine default settings, see
+.Xr vmtools.conf 5 .
+.El
+.Pp
+Moreover, the content of
+.Pa /usr/local/share/vmtools
+can be overridden in the following locations (in the order of precedence):
+.Bl -tag -width Ds
+.It ~/.config/vmtools
+User overrides (if
+.Cm cfg_include_userhome
+is set to
+.Dq yes ) .
+.It /etc/vmtools
+System-wide overrides.
+.El
+.
+.
+.Sh EXIT STATUS
+.
+.Ex -std
+.
+.
+.Sh EXAMPLES
+.
+.Bl -inset
+.It Example 1:
+Delete a single virtual machine:
+.Pp
+.Dl Ic vmrm ./myVM
+.Pp
+.It Example 2:
+Recursively delete all virtual machines located in a directory:
+.Pp
+.Dl Ic vmrm -r ~/trash/*
+.Pp
+.El
+.
+.
+.Sh SEE ALSO
+.
+.Xr vmcp 1 ,
+.Xr vmmv 1 ,
+.Xr vmtools 7
+.
+.
+.Sh REPORTING BUGS
+.
+Please send bug reports to the
+.Lk http://github.com/WhiteWinterWolf/vmtools/issues "vmtools issues page" .
+.
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmrm.1.gz END
+.\" ############################################################################

@@ -1,0 +1,157 @@
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmrndmac.1.gz BEGIN
+.\" ############################################################################
+.\"
+.\" Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+.\"
+.\" This file is part of vmtools.
+.\"
+.\" vmtools is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
+.\"
+.\" ############################################################################
+.
+.Dd June 3, 2017
+.Dt VMRNDMAC 1
+.Os vmtools
+.
+.
+.Sh NAME
+.
+.Nm vmrndmac
+.Nd generate a random MAC address
+.
+.
+.Sh SYNOPSIS
+.
+.Nm
+.Op Fl h
+.Op Ar prefix
+.
+.
+.Sh DESCRIPTION
+.
+Generate a random MAC address.
+.Pp
+Such address can be used to manually update a virtual machine network settings.
+.Pp
+.Ar prefix
+must be a valid prefix for the MAC address.
+It must contain up to six groups of two hexadecimal digits separated by colons.
+A final colon may be present or omitted.
+It is not possible to break a group of two hexadecimal digits.
+.Pp
+Moreover, care should be taken for the address to be valid from a network
+perspective.
+It is recommended to use valid Organizationally Unique Identifier (OUI).
+At the very least the multicast bit must be set to zero to avoid frames drop
+and the locally administered bit should be set to one.
+.Pp
+Addresses fulfilling both of these recommendations have their first byte ending
+with either
+.Ic 2 , 6 , A
+or
+.Ic E
+(see
+.Sx EXAMPLES
+below).
+Addresses with the multicast bit set to zero have an even first byte.
+.Pp
+If no
+.Ar prefix
+is provided,
+.Cm vm_networking_default_mac
+is read from
+.Xr vmtools.conf 5 .
+.
+.
+.Sh OPTIONS
+.
+The options are as follows:
+.
+.Bl -tag -width Ds
+.It Fl h
+Show usage information summary then exit.
+.El
+.
+.
+.Sh ENVIRONMENT
+.
+.Bl -tag -width Ds
+.It Ev XDG_CONFIG_HOME
+Location of user's configuration files, by default
+.Pa ~/.config .
+.El
+.
+.
+.Sh FILES
+.
+.Bl -tag -width Ds
+.It Pa /usr/local/lib/vmtools
+Libraries shared by the vmtools project utilities.
+.It Pa /usr/local/share/vmtools/vmtools.conf
+Virtual machine default settings, see
+.Xr vmtools.conf 5 .
+.El
+.Pp
+Moreover, the content of
+.Pa /usr/local/share/vmtools
+can be overridden in the following locations (in the order of precedence):
+.Bl -tag -width Ds
+.It ~/.config/vmtools
+User overrides (if
+.Cm cfg_include_userhome
+is set to
+.Dq yes ) .
+.It /etc/vmtools
+System-wide overrides.
+.El
+.
+.
+.Sh EXIT STATUS
+.
+.Ex -std
+.
+.
+.Sh EXAMPLES
+.
+.Bl -inset
+.It Example 1:
+Generate a random MAC address using the default prefix:
+.Pp
+.Dl Ic vmrndmac
+.Pp
+.It Example 2:
+Generate a random MAC address with a fixed prefix (the first byte ending with a
+.Ic 2
+denotes a locally administered, unicast MAC address):
+.Pp
+.Dl Ic vmrndmac '12:34:ab:cd'
+.Pp
+.El
+.
+.
+.Sh SEE ALSO
+.
+.Xr vmtools.conf 5 ,
+.Xr vmtools 7
+.
+.
+.Sh REPORTING BUGS
+.
+Please send bug reports to the
+.Lk http://github.com/WhiteWinterWolf/vmtools/issues "vmtools issues page" .
+.
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmrndmac.1.gz END
+.\" ############################################################################

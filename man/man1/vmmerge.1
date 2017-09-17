@@ -1,0 +1,263 @@
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmmerge.1.gz BEGIN
+.\" ############################################################################
+.\"
+.\" Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+.\"
+.\" This file is part of vmtools.
+.\"
+.\" vmtools is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
+.\"
+.\" ############################################################################
+.
+.Dd June 3, 2017
+.Dt VMMERGE 1
+.Os vmtools
+.
+.
+.Sh NAME
+.
+.Nm vmmerge
+.Nd merge parent and child virtual machines
+.
+.
+.Sh SYNOPSIS
+.
+.Nm
+.Op Fl hqvy
+.Op Fl c | p
+.Op Ar vmhome_path ...
+.
+.
+.Sh DESCRIPTION
+.
+Merge a virtual machine into its parent or child.
+.Pp
+The details about the direction of the merge and its implication is described
+in
+.Sx Merge operating modes
+below.
+The default is to merge the virtual machine into its parent (equivalent to
+.Fl p ) .
+.Pp
+.Ar vmhome_path
+must be a valid virtual machine home directory.
+If no value is provided, the current working directory is assumed.
+.
+.
+.Sh OPTIONS
+.
+.Ss Merge operating modes
+.
+Merge operating modes are exclusive.
+.Pp
+If each affected virtual machine is organized as a subdirectory of its parent,
+the directories are moved as required to reflect the updated parent-child
+relationship.
+.Pp
+The merge method selection options are as follows:
+.
+.Bl -tag -width Ds
+.
+.It Fl c
+Merge the virtual machine into its child.
+.Pp
+The virtual machine located in
+.Ar vmhome_path
+must have a single child.
+.Pp
+This method merges the storage and settings of the virtual machine located in
+.Ar vmhome_path
+into its child and then deletes it, moving the child as necessary.
+If the original virtual machine had a parent, it now becomes the parent of the
+child virtual machine.
+.
+.It Fl p
+Merge the virtual machine into its parent (default behavior).
+.Pp
+The virtual machine located in
+.Ar vmhome_path
+must have a parent and be its only child.
+.Pp
+This method merges the storage and settings of the virtual machine located in
+.Ar vmhome_path
+into its parent and then deletes it.
+If the original virtual machine had any child, they now become childs of the
+resulting parent virtual machine.
+.El
+.
+.Ss Other options
+.
+The other options are as follows:
+.
+.Bl -tag -width Ds
+.It Fl h
+Show usage information summary then exit.
+.
+.It Fl q
+Decrease verbosity.
+Add several
+.Fl q
+options to decrease verbosity even more
+.Fl ( qq
+by default to get minimal output).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl v
+to increase the verbosity level.
+.
+.It Fl v
+Increase verbosity.
+Add several
+.Fl v
+options to increase verbosity even more
+.Fl ( vvv
+by default to get the most verbose output, including debugging messages).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl q
+to decrease the verbosity level.
+.
+.It Fl y
+Don't ask any question: accept all confirmation requests and automatically
+select the default answer in any other situation.
+.Pp
+Use this option with
+.Em great care :
+no confirmation will be asked before deleting or overwriting any files!
+.El
+.
+.
+.Sh ENVIRONMENT
+.
+.Bl -tag -width Ds
+.It Ev TMPDIR
+Default location to store temporary files, by default
+.Pa /tmp .
+.
+.It Ev XDG_CONFIG_HOME
+Location of user's configuration files, by default
+.Pa ~/.config .
+.El
+.
+.
+.Sh FILES
+.
+.Bl -tag -width Ds
+.It Pa /usr/local/lib/vmtools
+Libraries shared by the vmtools project utilities.
+.It Pa /usr/local/share/vmtools/vmtools.conf
+Virtual machine default settings, see
+.Xr vmtools.conf 5 .
+.El
+.Pp
+Moreover, the content of
+.Pa /usr/local/share/vmtools
+can be overridden in the following locations (in the order of precedence):
+.Bl -tag -width Ds
+.It ~/.config/vmtools
+User overrides (if
+.Cm cfg_include_userhome
+is set to
+.Dq yes ) .
+.It /etc/vmtools
+System-wide overrides.
+.El
+.
+.
+.Sh EXIT STATUS
+.
+.Bl -tag -compact -width Ds
+.It 0
+The operation ended successfully.
+.It 1
+An error occurred, incomplete tasks have been reverted.
+.It 2
+Wrong usage, nothing has been done.
+.El
+.
+.
+.Sh EXAMPLES
+.
+In the examples below, the notation
+.Pa A/B/C
+means that
+.Pa B
+is both a child virtual machine and a subdirectory of
+.Pa A
+and
+.Pa C
+is both a child virtual machine and a subdirectory of
+.Pa B .
+.Pp
+.Bl -tag -width Ds
+.It Example 1: Parent merge (default behavior):
+Invoking one of the commands on the tree
+.Pa /A/B/C Ns :
+.Pp
+.Bd -literal -offset indent
+.Ic vmmerge /A/B
+.Ic vmmerge -p /A/B
+.Ed
+.Pp
+These two commands are equivalent and merge
+.Pa B
+into its parent
+.Pa A .
+.Pa C
+becomes a child of
+.Pa A ,
+producing
+.Pa A/C .
+.It Example 2: Child merge:
+Invoking the command:
+.Pp
+.Dl Ic vmmerge -c /A/B
+.Pp
+On the tree:
+.Pa /A/B/C
+.Pp
+Merges
+.Pa B
+into its child
+.Pa C .
+Here too the updated
+.Pa C
+becomes a child of
+.Pa A ,
+producing
+.Pa A/C .
+.El
+.
+.Sh SEE ALSO
+.
+.Xr vmfork 1 ,
+.Xr vminfo 1 ,
+.Xr vmtools 7
+.
+.
+.Sh REPORTING BUGS
+.
+Please send bug reports to the
+.Lk http://github.com/WhiteWinterWolf/vmtools/issues "vmtools issues page" .
+.
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmmerge.1.gz END
+.\" ############################################################################

@@ -1,0 +1,178 @@
+#! /bin/sh -efu
+################################################################################
+### /usr/local/bin/vmup BEGIN
+################################################################################
+#
+# Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+#
+# This file is part of vmtools.
+#
+# vmtools is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+################################################################################
+
+usage="Start a Qemu virtual machine.
+
+Usage:
+  vmup [-bhinqvyz] [-C storage] [-c storage] [-D storage] [-d storage]
+       [-o setting=value] [-r | -s] [-t template_name] path...
+
+Options:
+  -b    Enable BIOS' boot media selection menu.
+  -C path
+        Like '-c', but also set boot order to boot from the HDD.
+  -c path
+        Add a hard-disk drive image file.
+  -D path
+        Like '-d', but also set boot order to boot from CD-ROM.
+  -d path
+        Add a CD-ROM image file.
+  -h    Show usage information.
+  -i    Interactive mode, do not daemonize but provide a Qemu monitor shell.
+  -n    Do not start the virtual machine.
+  -o setting=value
+        Override a setting.
+  -q    Decrease verbosity.
+  -r    Read-only access to all storage image files.
+  -s    Snapshot access to all storage image files (non-persistent mode).
+  -t template_name
+        Apply a template.
+  -v    Increse verbosity.
+  -y    Do not ask any confirmation, assume 'yes'.
+  -z    Generate compressed disk images.
+"
+
+
+################################################################################
+# Functions
+################################################################################
+
+# Loading shared libs (loading them all is faster than nitpicking).
+for f in $( find '/usr/local/lib/vmtools' -name '*.inc.sh' )
+do
+	. "$f" || exit 1
+done
+
+###
+# _initialize path
+#
+# Loads and sets the variable defining the VM matching a given path.
+#
+_initialize() {
+	local 'config_templates' 'file_type' 'fullpath' 'i' 'module' 'vmforks'
+	local 'vmpath'
+	[ "${1-}" = '--' ] && shift
+	fullpath=${1:?"ERROR (BUG): _initialize: Missing parameter."}
+	vmpath=$( storage_get_path -- "$fullpath" ) || return 1
+	vm_name=${vmpath##*/}
+
+	if expr "$vmpath" : \
+		'\([a-zA-Z]*://.*\.[iI][sS][oO]\)\([#&?].*\)\{0,1\}$' >/dev/null \
+		|| file -b "$vmpath" | grep -q 'ISO 9660 CD-ROM filesystem'
+	then
+
+		### Local or remote ISO file ###
+
+		cli_trace 3 "'$vmpath' is an ISO file."
+		vm_home=''
+		# This ISO is enforced to be the main CD-ROM image to start.
+		# Any other image added through -d is queued using
+		# `settings_setstorage()' to be added as the seconday CD-ROM
+		# device.
+		settings_set 'vm_storage_cdrom1_backend' "$fullpath"
+		settings_set 'vm_storage_cdrom1_enable' 'yes'
+		settings_set 'vm_boot_order' 'd'
+		vmup_inputsettings || return 1
+
+	elif [ -d "$vmpath" ]
+	then
+
+		### Local VM home directory ###
+
+		cli_trace 3 "'$fullpath' is a VM home."
+		vm_home=$( realpath -- "$fullpath" ) || return 1
+		lock_acquire -- "$vm_home" || return 1
+		settings_loadvm || return 1
+
+	else
+
+		### Local or remote hard-disk image ###
+
+		cli_trace 3 "'$vmpath' is a hard-disk image file."
+		vm_home=''
+		settings_set 'vm_storage_hdd1_backend' "$fullpath"
+		settings_set 'vm_storage_hdd1_createsize' ''
+		settings_set 'vm_storage_hdd1_enable' 'yes'
+		vmup_inputsettings || return 1
+	fi
+}
+
+
+################################################################################
+# Parse parameters
+################################################################################
+
+include_globalconf || exit 1
+
+vmup_parseargs "$@" || exit $?
+shift $(( OPTIND - 1 ))
+
+if [ "$#" -eq 0 ]
+then
+	set -- "."
+fi
+
+
+################################################################################
+# Main
+################################################################################
+
+rc=0
+
+for p
+do
+	# Spanning a new process has two advantages:
+	# - Better isolation preventing any interference when launching several VMs.
+	# - Immediate deletion of temporary files and locks by `trap' upon error.
+	(
+		if ! _initialize -- "$p"
+		then
+			echo "${p}: ERROR: Failed to initialize the virtual machine." >&2
+			exit 1
+		fi
+
+		if ! vmup_runqemu
+		then
+			echo "${vm_name}: ERROR: Failed to start the virtual machine." >&2
+			exit 1
+		fi
+
+		if [ -n "$vm_home" ]
+		then
+			lock_release -- "$vm_home"
+		fi
+		cleanup_end
+
+		if [ "$vm_qemu_daemonize" = 'yes' ]
+		then
+			cli_trace 1 "${vm_name}: Virtual machine started."
+		fi
+	) || rc=1
+done
+
+exit "$rc"
+
+################################################################################
+### /usr/local/bin/vmup END
+################################################################################

@@ -1,0 +1,466 @@
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmcp.1.gz BEGIN
+.\" ############################################################################
+.\"
+.\" Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+.\"
+.\" This file is part of vmtools.
+.\"
+.\" vmtools is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
+.\"
+.\" ############################################################################
+.
+.Dd June 3, 2017
+.Dt VMCP 1
+.Os vmtools
+.
+.
+.Sh NAME
+.
+.Nm vmcp ,
+.Nm vmfork
+.Nd copy or fork virtual machines
+.
+.
+.Sh SYNOPSIS
+.
+.Nm vmcp
+.Op Fl hkqRrsvyz
+.Op Fl M Ar module_name
+.Op Fl m Ar module_name
+.Op Fl o Ar setting Ns = Ns Ar value
+.Op Fl a Oo Fl n Oc | Fl c | f
+.Ar source ... directory
+.Nm vmcp
+.Op Fl hkqRrsvyz
+.Op Fl M Ar module_name
+.Op Fl m Ar module_name
+.Op Fl o Ar setting Ns = Ns Ar value
+.Op Fl a Oo Fl n Oc | Fl c | f
+.Ar source destination
+.Pp
+.Nm vmfork
+.Op Fl hkqRrsvyz
+.Op Fl M Ar module_name
+.Op Fl m Ar module_name
+.Op Fl o Ar setting Ns = Ns Ar value
+.Op Fl a Oo Fl n Oc | Fl c | f
+.Ar source destination ...
+.
+.
+.Sh DESCRIPTION
+.
+Create a copy of an currently existing virtual machine.
+.Pp
+Several copy modes are supported, in each mode each copied virtual machine has
+a similar content than
+.Ar source :
+.Bl -tag -width "Autonomous copy:" -offset indent
+.It Default copy :
+The resulting virtual machines shares the same parent as its source.
+This is the default operation mode for
+.Nm vmcp .
+.It Fork :
+The resulting virtual machine is a child of
+.Ar source .
+This is the default operation mode for
+.Nm vmfork .
+.It Autonomous copy :
+The resulting virtual machined does not depend on any parent VM.
+.El
+.Pp
+The only differences between
+.Ar source
+and the resulting virtual machines are handled by the customizables
+.Em clone
+modules.
+By default they only affect, if applicable, the virtual machine MAC address and
+its storage path.
+For more information on customizable modules, see
+.Xr vmtools 7 .
+.Pp
+.Ar source
+must be a valid virtual machine home directory (unless
+.Fl r
+has been provided) and the virtual machine must not be currently running.
+.Pp
+If only one
+.Ar source
+and one
+.Ar destination
+are provided, the resulting virtual machine home directory will be
+.Ar destination
+if it does not already exists, or a subdirectory of it if
+.Ar destination
+is an already existing directory.
+.Pp
+If more than two paths are provided:
+.Bl -bullet -offset indent
+.It
+.Nm vmcp
+expects the latest path to be a writable directory, a copy of each
+.Ar source
+virtual machines will be created below
+.Ar directory.
+.It
+.Nm vmfork
+expects the first path to be the
+.Ar source
+vitual machine, all subsequent paths are handled as
+.Ar destination
+paths to create as many copies of the
+.Ar source
+virtual machine.
+.El
+.
+.
+.Sh OPTIONS
+.
+.Ss Copy mode selection options
+Each of these flags is valid for both
+.Nm vmcp
+and
+.Nm vmfork ,
+which means that it is possible to create a fork using
+.Nm vmcp
+by using the
+.Fl f
+flag and create default copies using
+.Nm vmfork
+by using the
+.Fl c
+flag.
+This allows to take advantage of the different behavior of these commands in
+presence of multiple
+.Ar source
+or
+.Ar destination
+arguments.
+.Pp
+The copy mode selection options are as follows:
+.
+.Bl -tag -width Ds
+.It Fl a
+Autonomous copy.
+.br
+The resulting virtual machine will not rely on any parent.
+.
+.It Fl c
+Default copy.
+.br
+The resulting virtual machine will rely on the same parent as the source one.
+If the source virtual machine has no parent, using either
+.Fl a
+or
+.Fl c
+produces the same result.
+.
+.It Fl f
+Fork.
+.br
+The resulting virtual machine will use the source one as parent.
+.El
+.
+.Ss Other options
+.
+The other options are as follows:
+.
+.Bl -tag -width Ds
+.It Fl h
+Show usage information summary then exit.
+.
+.It Fl k
+Keep parent's unique properties.
+.br
+The
+.Em clone
+modules are still called to do the required processing to ensure the source
+virtual machine integrity (like handling storage image files), however the
+resulting virtual machines will share the same unique properties (like the MAC
+address) than the source.
+.
+.It Fl M Ar module_name
+Do not invoke the clone module
+.Ar module_name .
+.br
+This is equivalent than removing
+.Ar module_name
+from the
+.Cm cfg_modules_clone
+setting (see
+.Xr vmtools.conf 5 ) .
+.br
+.Ar module_name
+may not exist and may not be present in
+.Cm cfg_modules_clone .
+.
+.It Fl m Ar module_name
+Invoke the clone module
+.Ar module_name .
+.br
+This is equivalent than adding
+.Ar module_name
+to the
+.Cm cfg_modules_clone
+setting (see
+.Xr vmtools.conf 5 ) .
+.br
+.Ar module_name
+must exist, it may be already present in
+.Cm cfg_modules_clone
+in which case the module will be invoked only once.
+.
+.It Fl n
+Do not modify the source virtual machine during an autonomous copy.
+.br
+Using this setting is generally not recommended unless the parent virtual
+machine is located on some read-only storage where any lock attempt would fail.
+.Pp
+This setting can be used only in conjunction with
+.Fl a
+(autonomous copy).
+.
+.It Fl o Ar setting Ns = Ns Ar value
+Affect
+.Ar value
+to
+.Ar setting ,
+overriding any previous value set in
+.Xr vmtools 7
+configuration or virtual machine settings.
+Available settings are listed in the
+.Xr vmtools.conf 5
+file.
+.
+.It Fl q
+Decrease verbosity.
+Add several
+.Fl q
+options to decrease verbosity even more
+.Fl ( qq
+by default to get minimal output).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl v
+to increase the verbosity level.
+.
+.It Fl R
+Recurse over child virtual machines: each child of
+.Ar source
+is recursively copied as a new child of the destination virtual machine.
+.br
+Each of these new child virtual machines is created as a subdirectory of its
+parent, independantly of the location of it matching source.
+.Pp
+See also
+.Fl r
+for directory-based recursion, both recursion modes can be associated.
+.
+.It Fl r
+Recurse over directory content: each subdirectory of
+.Ar source
+containing a virtual machine home directory is copied below
+.Ar destination
+(including
+.Ar source
+itself if it is a virtual machine home), keeping relative paths intact.
+.br
+When this option is used,
+.Ar source
+only requires to be directory, it does not need to be virtual machine home.
+.Pp
+See also
+.Fl R
+for child-based recursion.
+Both recursion modes can be associated, in such a case directory-based
+recursion takes precedence to preserve the directory tree layout even if this
+means that a child may not be a direct subdirectory of its parent.
+.
+.It Fl s
+Enable Qemu snapshot (non-persistent) mode for the resulting virtual machines.
+.br
+The created virtual machines are volatile and do not store any change to their
+storage backends.
+Restarting such a virtual machine effectively rolls it back to a state similar
+to the source virtual machine. This is useful to span virtual machines for
+quick tests purpose from a clean master virtual machine.
+.Pp
+When using this option, when possible
+.Nm vmcp
+and
+.Nm vmfork
+do not create any disk image at all for the resulting virtual machines but
+instead make them directly access the source virtual machine storage in
+snapshot mode.
+.Pp
+This parameter has no effect on read-only storage.
+.Pp
+.Em Warning:
+when manipulating sensitive data, ensure to always work on a copy instead of
+the original file and/or unset the write bit on the backing file (see
+.Xr chmod 1 ) .
+.
+.It Fl v
+Increase verbosity.
+Add several
+.Fl v
+options to increase verbosity even more
+.Fl ( vvv
+by default to get the most verbose output, including debugging messages).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl q
+to decrease the verbosity level.
+.
+.It Fl y
+Don't ask any question: accept all confirmation requests and automatically
+select the default answer in any other situation.
+.Pp
+Use this option with
+.Em great care :
+no confirmation will be asked before deleting or overwriting any files!
+.
+.It Fl z
+Compress copied or converted disk image files.
+.br
+This only affects QCow2 hard-disk images being copied or converted, data
+written by a running guest is never compressed.
+.Pp
+Before creating a compressed copy, ensure from wihtin the guest that the
+storage is correctly trimmed (on Linux systems, see
+.Xr fstrim 8 )
+as this shrinks the storage files to their minimum size.
+.El
+.
+.
+.Sh ENVIRONMENT
+.
+.Bl -tag -width Ds
+.It Ev TMPDIR
+Default location to store temporary files, by default
+.Pa /tmp .
+.
+.It Ev XDG_CONFIG_HOME
+Location of user's configuration files, by default
+.Pa ~/.config .
+.El
+.
+.
+.Sh FILES
+.
+.Bl -tag -width Ds
+.It Pa /usr/local/lib/vmtools
+Libraries shared by the vmtools project utilities.
+.It Pa /usr/local/share/vmtools/modules/clone
+Modules handling the virtual machine copying process.
+.It Pa /usr/local/share/vmtools/vmtools.conf
+Virtual machine default settings, see
+.Xr vmtools.conf 5 .
+.El
+.Pp
+Moreover, the content of
+.Pa /usr/local/share/vmtools
+can be overridden in the following locations (in the order of precedence):
+.Bl -tag -width Ds
+.It ~/.config/vmtools
+User overrides (if
+.Cm cfg_include_userhome
+is set to
+.Dq yes ) .
+.It /etc/vmtools
+System-wide overrides.
+.El
+.
+.
+.Sh EXIT STATUS
+.
+.Bl -tag -compact -width Ds
+.It 0
+The operation ended successfully.
+.It 1
+An error occurred, incomplete tasks have been reverted.
+.It 2
+Wrong usage, nothing has been done.
+.El
+.
+.
+.Sh EXAMPLES
+.
+.Ss Nm vmfork
+.
+.Bl -inset
+.It Example 1:
+Fork a virtual machine:
+.Pp
+.Dl Ic vmfork ./fooOS-base ./fooOS-20170515
+.Pp
+.It Example 2:
+Create a snapshot fork of a virtual machine:
+.Pp
+.Dl Ic vmfork -s ./foo ./foo-tests
+.Pp
+.It Example 3:
+Create several forks of one virtual machine (compare it to the
+.Nm vmcp
+example 2, the relationship here is one-to-many):
+.Pp
+.Dl Ic vmfork ./foo ./fork1 ./fork2 ./fork3
+.Pp
+.El
+.
+.Ss Nm vmcp
+.Bl -inset
+.It Example 1:
+Copy several virtual machines to a directory:
+.Pp
+.Dl Ic vmcp ./foo ./bar ~/archives
+.Pp
+.It Example 2:
+Create a fork of all virtual machines located directly below a
+directory (compare it to the
+.Nm vmfork
+example 3, the relationship here is many-to-one):
+.Pp
+.Dl Ic vmcp -f ~/archived_vms/* ~/work
+.Pp
+.It Example 4:
+Recursively copy all the virtual machines stored in a directory:
+.Pp
+.Dl Ic vmcp -r ~/Documents/VMs ~/backup
+.Pp
+.El
+.
+.
+.Sh SEE ALSO
+.
+.Xr vmmerge 1 ,
+.Xr vmmv 1 ,
+.Xr vmrm 1 ,
+.Xr vmtools 7
+.
+.
+.Sh REPORTING BUGS
+.
+Please send bug reports to the
+.Lk http://github.com/WhiteWinterWolf/vmtools/issues "vmtools issues page" .
+.
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmcp.1.gz END
+.\" ############################################################################

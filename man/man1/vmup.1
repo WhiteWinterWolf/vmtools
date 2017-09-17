@@ -1,0 +1,526 @@
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmup.1.gz BEGIN
+.\" ############################################################################
+.\"
+.\" Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+.\"
+.\" This file is part of vmtools.
+.\"
+.\" vmtools is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
+.\"
+.\" ############################################################################
+.
+.Dd March 10, 2017
+.Dt VMUP 1
+.Os vmtools
+.
+.
+.Sh NAME
+.
+.Nm vmup ,
+.Nm vmcreate
+.Nd start or create a Qemu virtual machine
+.
+.
+.Sh SYNOPSIS
+.
+.Nm vmup
+.Op Fl bhinqvyz
+.Op Fl C Ar storage
+.Op Fl c Ar storage
+.Op Fl D Ar storage
+.Op Fl d Ar storage
+.Op Fl o Ar setting Ns = Ns Ar value
+.Op Fl r | s
+.Op Fl t Ar template_name
+.Op Ar path ...
+.Pp
+.Nm vmcreate
+.Op Fl bhinqvyz
+.Op Fl C Ar storage
+.Op Fl c Ar storage
+.Op Fl D Ar storage
+.Op Fl d Ar storage
+.Op Fl o Ar setting Ns = Ns Ar value
+.Op Fl r | s
+.Op Fl t Ar template_name
+.Op Ar vmhome ...
+.
+.
+.Sh DESCRIPTION
+.
+.Ss Nm vmup
+Boot each
+.Ar path
+as a Qemu virtual machine.
+.Ar path
+may be a path to a virtual machine home directory created using
+.Nm vmcreate
+or a storage path (see
+.Sx Storage path
+below).
+.Pp
+If no
+.Ar path
+is given,
+.Nm vmup
+assumes that the current working directory is a virtual machine home directory
+created using
+.Nm vmcreate.
+.
+.Ss Nm vmcreate
+Create a new virtual machine in the directory
+.Ar vmhome .
+.Pp
+If the directory does not already exists, it will be created.
+If it already exists, it must not already contain a virtual machine.
+If no path is given, the current working directory is assumed.
+.
+.
+.Ss Storage path
+.
+The
+.Ar storage
+value may be one of the following:
+.Bl -bullet -offset indent
+.It
+A path to a media image file natively supported by Qemu.
+.br
+This includes CD and DVD ISO images, raw and QCow2 hard-disk images.
+.It
+A path to a third-party or legacy hard-disk image file.
+.br
+.Nm vmcreate
+and
+.Nm vmup
+propose to automatically convert such files into a QCow2 file, otherwise
+such files are loaded in snapshot mode by default.
+Conversion of
+.Pa .ova
+files is also supported (Qemu doesn't support them natively).
+.It
+A path to a local device file.
+.It
+A URL to a remote file or network storage.
+.br
+The protocols supported by Qemu are FTP(S), HTTP(S), iSCSI, NBD, SSH and TFTP.
+Such files are loaded in snapshot mode by default, except iSCSI and NBD URLs
+which are accessed in read-write mode by default.
+See
+.Xr qemu-system 1
+to get more information regarding the URL syntax.
+.It
+A path to a directory.
+.br
+.Nm vmup
+and
+.Nm vmcreate
+dynamically generates a device allowing to share the directory content with
+the guest.
+Limitations and requirements vary depending on the selected device type:
+.Bl -dash -offset indent
+.It
+With hard-disk devices, Qemu virtual VFAT (VVFAT) feature is used.
+The total directory size cannot exceed 504 MB and the host must not modify the
+shared directory content while the guest is running.
+The shared directory is accessed in read-only mode by default, but read-write
+mode is also supported.
+.Pp
+This feature is not documented in the Qemu man page but is natively supported.
+.It
+With CD-ROM devices,
+.Xr genisoimage 1
+is used to automatically generate an ISO image storing the directory content.
+If this command is not available on the host this feature is not available.
+.\" TODO: Mention SMB share ("smb=dir" in Qemu doc) when using user mode net.
+.El
+.El
+.Pp
+Additionally, the storage path can be prefixed to explicitly set its access
+mode:
+.Pp
+.Bl -tag -width "snap:" -offset indent -compact
+.It Ic rw:
+Read-write mode.
+.It Ic snap:
+Snapshot / non-persistent mode.
+.It Ic ro:
+Read-only mode.
+.El
+.Pp
+The colon is part of the prefix (see
+.Sx EXAMPLES
+below).
+Depending on the device settings and storage path used, not all modes are
+always available.
+When incompatible settings are used, starting the virtual machine fails with an
+(hopefully explicit) error message.
+.Pp
+See also the Storage section in
+.Xr vmtools.conf 5
+for more details.
+.
+.
+.Sh OPTIONS
+.
+The options are as follows:
+.Bl -tag -width Ds
+.
+.It Fl b
+Display the boot media selection menu. The exact behavior depends on the BIOS
+used by Qemu.
+.
+.It Fl C Ar storage
+Like
+.Fl c
+but also set the boot order to boot from a hard-disk.
+.Pp
+.Em Warning:
+Using this option only enforces booting from a hard-disk drive as opposed to
+another media type. It cannot ensure that the system will effectively boot from
+.Ar storage
+if it is not the guest's first or only hard-disk device.
+.
+.It Fl c Ar storage
+Associate the guest's first free hard-disk drive to an image file.
+.Ar storage
+may point to a regular file, a block device, a directory or be a URL (see
+.Sx Storage path
+above).
+.Pp
+If
+.Ar storage
+points to a directory, it will be used to setup a virtual VFAT (VVFAT) share
+with the guest. The total size of such share cannot exceed 504 MB.
+.Em Attention:
+it is important that the host does not attempt to modify the
+content of this directory as long as the guest is running.
+.
+.It Fl D Ar storage
+Like
+.Fl d
+but also set the boot order to boot from a CD-ROM.
+.Pp
+.Em Warning:
+Using this option only enforces booting from a CD-ROM drive as opposed to
+another media type. It cannot ensure that the system will boot from
+.Ar storage
+if it is not the guest's first or only CD-ROM device.
+.
+.It Fl d Ar storage
+Associate the guest's first free CD-ROM drive to an image file  (see
+.Sx Storage path
+above).
+.Ar storage
+may points to a regular file, a block device, a directory or be a URL.
+.Pp
+If
+.Ar storage
+points to a directory, then
+.Xr  genisoimage 1
+must be available on the host and will be used to generate an ISO image
+on-the-fly.
+.
+.It Fl h
+Show usage information summary then exit.
+.
+.It Fl i
+Interactive mode: do not daemonize,  when the virtual machine has been started
+provide a Qemu monitor shell instead of exiting.
+.Pp
+When using this flag with
+.Nm vmcreate ,
+a final confirmation is requested after shutting down the virtual machine
+allowing to quickly restart a guest installation in case of wrong manipulation.
+.
+.It Fl n
+Do not start the virtual machine, all the other processing is done normally.
+This allows to create a new virtual machine or convert some files without
+booting them.
+.
+.It Fl o Ar setting Ns = Ns Ar value
+Affect
+.Ar value
+to
+.Ar setting ,
+overriding any previous value set in
+.Xr vmtools 7
+configuration or virtual machine settings.
+Available settings are listed in the
+.Xr vmtools.conf 5
+file.
+.Pp
+When used with
+.Nm vmcreate ,
+settings set using this option will also be stored in the newly created virtual
+machine settings file.
+.
+.It Fl q
+Decrease verbosity.
+Add several
+.Fl q
+options to decrease verbosity even more
+.Fl ( qq
+by default to get minimal output).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl v
+to increase the verbosity level.
+.
+.It Fl r
+Do not modify storage backend files: enforce access to be read-only (write
+attempts from the guest will fail).
+Depending on the device settings, Qemu may refuse to start when read-only mode
+is enforced.
+.
+.It Fl s
+Do not modify storage backend files: use Qemu snapshot (non-persistent) mode
+(the storage is seen as read-write by the guest, but modifications are stored
+in a temporary file which is dropped once the virtual machine is stopped).
+.Pp
+This parameter has no effect on read-only storage.
+.Pp
+.Em Warning:
+when manipulating sensitive data, ensure to always work on a copy instead of
+the original file and/or unset the write bit on the backing file (see
+.Xr chmod 1 ) .
+Files with the write bit unset seem to be automatically loaded in snapshot mode
+by Qemu.
+.
+.It Fl t Ar template
+Apply a template,
+.Ar template
+must be a valid template name: the name of a
+.Pa .inc.sh
+file from the
+.Pa templates
+directory without its extension (see
+.Sx FILES
+below).
+.Pp
+When used with
+.Nm vmcreate ,
+template selected using this flag will also be added to the newly created
+virtual machine settings file.
+.
+.It Fl v
+Increase verbosity.
+Add several
+.Fl v
+options to increase verbosity even more
+.Fl ( vvv
+by default to get the most verbose output, including debugging messages).
+See
+.Xr vmtools.conf 5
+for more information about verbosity levels.
+.Pp
+See
+.Fl q
+to decrease the verbosity level.
+.
+.It Fl y
+Don't ask any question: accept all confirmation requests and automatically
+select the default answer in any other situation.
+.Pp
+Use this option with
+.Em great care :
+no confirmation will be asked before deleting or overwriting any files!
+.
+.It Fl z
+Compress copied or converted disk image files.
+This only affects QCow2 hard-disk images being copied or converted, data
+written by a running guest is never compressed.
+.El
+.
+.
+.Sh ENVIRONMENT
+.
+.Bl -tag -width Ds
+.It Ev TMPDIR
+Default location to store temporary files, by default
+.Pa /tmp .
+.
+.It Ev XDG_CONFIG_HOME
+Location of user's configuration files, by default
+.Pa ~/.config .
+.El
+.
+.
+.Sh FILES
+.
+.Bl -tag -width Ds
+.It Pa /usr/local/lib/vmtools
+Libraries shared by the vmtools project utilities.
+.It Pa /usr/local/share/vmtools/modules/buildcmd
+Modules used to build the Qemu command-line.
+.It Pa /usr/local/share/vmtools/modules/configure
+Modules used to select the virtual machine templates and define its settings.
+.It Pa /usr/local/share/vmtools/templates
+Virtual machines templates.
+.It Pa /usr/local/share/vmtools/vmtools.conf
+Virtual machine default settings, see
+.Xr vmtools.conf 5 .
+.El
+.Pp
+Moreover, the content of
+.Pa /usr/local/share/vmtools
+can be overridden in the following locations (in the order of precedence):
+.Bl -tag -width Ds
+.It ~/.config/vmtools
+User overrides (if
+.Cm cfg_include_userhome
+is set to
+.Dq yes ) .
+.It /etc/vmtools
+System-wide overrides.
+.El
+.
+.
+.Sh EXIT STATUS
+.
+.Bl -tag -compact -width Ds
+.
+.It 0
+The operation ended successfully.
+.It 1
+An error occurred, incomplete tasks have been reverted.
+.It 2
+Wrong usage, nothing has been done.
+.El
+.
+.
+.Sh EXAMPLES
+.
+.Ss Nm vmup
+.Bl -inset
+.It Example 1:
+Boot from a local ISO file:
+.Pp
+.Dl Ic vmup ./foo.iso
+.Pp
+.It Example 2:
+Boot from a local hard-disk disk image, but in snapshot mode:
+.Pp
+.Dl Ic vmup snap:./foo.vmdk
+.Pp
+.It Example 3:
+Boot from a remote URL:
+.Pp
+.Dl Ic vmup 'http://example.com/path/to/file.iso'
+.Pp
+.It Example 4:
+Boot using SPICE display instead of the default one:
+.Pp
+.Dl Ic vmup -o vm_display_type=spice ./foo.iso
+.Pp
+.It Example 5:
+Boot a virtual machine created using
+.Nm vmcreate :
+.Pp
+.Dl Ic vmup ~/path/to/my_vm
+.Pp
+.It Example 6:
+Boot the current virtual machine created using
+.Nm vmcreate :
+.Pp
+.Bd -literal -offset indent
+.Ic cd ~/path/to/my_vm
+.Ic vmup
+.Ed
+.Pp
+.It Example 7:
+Boot a virtual machine created using
+.Nm vmcreate ,
+but start from a live CD instead of the main guest's disk:
+.Pp
+.Dl Ic vmup -D ~/path/to/livecd.iso ~/path/to/my_vm
+.Pp
+.It Example 8:
+Convert a third-party image file into a QCow2 file without booting
+it:
+.Pp
+.Dl Ic vmup -yn ./foo.ova
+.Pp
+.El
+.
+.Ss Nm vmcreate
+.Bl -inset
+.It Example 1:
+Use an installation CD-ROM to create a new virtual machine:
+.Pp
+.Dl Ic vmcreate -d ~/path/to/install.iso ~/path/to/my_new_vm
+.Pp
+.It Example 2:
+Use an installation CD-ROM to create a new virtual machine, and propose to
+quickly restart the installation if needed:
+.Pp
+.Dl Ic vmcreate -i -d ~/path/to/install.iso ~/path/to/my_new_vm
+.Pp
+.It Example 3:
+Use an already existing hard-disk image file to create a new virtual machine:
+.Pp
+.Dl Ic vmcreate -c ~/path/to/disk.ova ~/path/to/my_new_vm
+.Pp
+.It Example 4:
+Use an already existing hard-disk image file to create three new virtual
+machines using the settings given as parameters
+.Fl ( o
+options) and without requiring any interaction
+.Fl ( y
+flag):
+.Pp
+.Bd -literal -offset indent
+.Ic vmcreate -o cpu_count=2 -o vm_ram_size=2G -y \e
+.Ic "    " -c ~/path/to/disk.ova ./vm_1 ./vm_2 ./vm_3
+.Ed
+.Pp
+.El
+.
+.
+.Sh SEE ALSO
+.
+.Xr vmdown 1 ,
+.Xr vmps 1 ,
+.Xr vmtools 7
+.
+.
+.Sh CAVEATS
+.
+.Bl -bullet
+.It
+Qemu VVFAT is not mentioned in Qemu man page, its implementation may
+potentially be fragile.
+.It
+There is a slight delay in searching free TCP ports and opening them which can
+lead to a race condition, specially when several virtual machines are started
+in parallel, making some of them to fail to start.
+.br
+The recommended way to start several virtual machines at once is to pass them
+as parameter to a single
+.Nm vmup
+command. This will also avoid any similar limitations affecting Qemu itself.
+.El
+.
+.
+.Sh REPORTING BUGS
+.
+Please send bug reports to the
+.Lk http://github.com/WhiteWinterWolf/vmtools/issues "vmtools issues page" .
+.
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmup.1.gz END
+.\" ############################################################################

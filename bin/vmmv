@@ -1,0 +1,181 @@
+#! /bin/sh -efu
+################################################################################
+### /usr/local/bin/vmmv BEGIN
+################################################################################
+#
+# Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+#
+# This file is part of vmtools.
+#
+# vmtools is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+################################################################################
+
+usage="Move or rename a virtual machine home directory.
+
+Usage:
+  vmmv [-hqvy] source destination
+  vmmv [-hqvy] source ... directory
+  vmmv [-hqvy] -t directory source ...
+
+Options:
+  -h    Show usage information.
+  -q    Decrease verbosity.
+  -t directory
+        Set the target directory.
+  -v    Increase verbosity.
+  -y    Do not ask any confirmation, assume 'yes'.
+"
+
+
+################################################################################
+# Global variables
+################################################################################
+
+# Ignore the last command-line argument
+ignorelast='no'
+
+# Target directory, provided either using `-t' option or as last argument.
+target=''
+
+
+################################################################################
+# Functions
+################################################################################
+
+# Loading shared libs (loading them all is faster than nitpicking).
+for f in $( find '/usr/local/lib/vmtools' -name '*.inc.sh' )
+do
+	. "$f" || exit 1
+done
+
+
+################################################################################
+# Parse parameters
+################################################################################
+
+include_globalconf || exit 1
+
+OPTIND=1
+while getopts "hqt:vy" param
+do
+	case "$param" in
+		'h') # Show usage information.
+			printf '%s\n' "$usage"
+			exit 0
+			;;
+
+		'q') # Decrease verbosity.
+			if [ "${cfg_ui_verbosity:?}" -gt 0 ]
+			then
+				cfg_ui_verbosity=$(( cfg_ui_verbosity - 1 )) || exit 1
+			fi
+			;;
+
+		't') # Set the target directory.
+			if [ -n "$target" ]
+			then
+				echo "ERROR: You can specify only one target." >&2
+				exit 2
+			fi
+			target=$OPTARG
+			;;
+
+		'v') # Increase verbosity.
+			cfg_ui_verbosity=$(( ${cfg_ui_verbosity:?} + 1 )) || exit 1
+			;;
+
+		'y') # Never ask any confirmation.
+			# - Don't ask confirmation before overwriting files.
+			# - Automatically fail instead of asking a new path name while
+			#   moving child VMs.
+			settings_override 'cfg_ui_assumeyes' 'yes'
+			;;
+
+		*)
+			echo "Unexpected argument: $1" >&2
+			exit 2
+			;;
+	esac
+done
+shift $(( OPTIND - 1 ))
+
+settings_set 'cfg_ui_verbosity' "${cfg_ui_verbosity:?}"
+if [ "${cfg_ui_verbosity:?}" -ge 5 ]
+then
+	set -x
+fi
+
+if [ -z "$target" ]
+then
+	# The last argument may contain the target directory.
+	eval target=\$$#
+	ignorelast='yes'
+
+	if [ -d "$target" ]
+	then
+		if [ $# -lt 2 ]
+		then
+			echo "ERROR: Too few arguments provided." >&2
+			exit 2
+		fi
+	elif [ $# -ne 2 ]
+	then
+		echo "ERROR: The target '${target}' is not a directory." >&2
+		exit 2
+	fi
+else
+	if [ $# -eq 0 ]
+	then
+		echo "ERROR: Too few argument provided." >&2
+		exit 2
+	fi
+fi
+
+
+################################################################################
+# Main
+################################################################################
+
+rc=0
+
+while [ $# -ne 0 ]
+do
+	(
+		cleanup_reset
+
+		if vmmv_move -- "$1" "$target"
+		then
+			cli_trace 1 "${1}: Virtual machine moved to '${target}'."
+		else
+			echo "ERROR: Failed to move '${1}'.">&2
+			exit 1
+		fi
+
+		cleanup_end || exit 1
+	) || rc=$?
+
+	shift
+	if [ $# -eq 1 -a "$ignorelast" = 'yes' ]
+	then
+		# Last parameter was the target directory name, ignore it.
+		break
+	fi
+done
+
+exit "$rc"
+
+################################################################################
+### /usr/local/bin/vmmv END
+################################################################################

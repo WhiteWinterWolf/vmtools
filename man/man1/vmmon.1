@@ -1,0 +1,169 @@
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmmon.1.gz BEGIN
+.\" ############################################################################
+.\"
+.\" Copyright 2017 WhiteWinterWolf (www.whitewinterwolf.com)
+.\"
+.\" This file is part of vmtools.
+.\"
+.\" vmtools is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
+.\"
+.\" ############################################################################
+.
+.Dd June 3, 2017
+.Dt VMMONITOR 1
+.Os vmtools
+.
+.
+.Sh NAME
+.
+.Nm vmmon
+.Nd access the Qemu monitor shell
+.
+.
+.Sh SYNOPSIS
+.
+.Nm vmcp
+.Op Fl h
+.Op Ar path
+.
+.
+.Sh DESCRIPTION
+.
+Access the Qemu monitor shell of a virtual machine.
+.Pp
+This shell is provided by Qemu to interactively control every aspect of the
+hypervisor.
+.Pp
+.Ar path
+may be of various types:
+.Pp
+.Bl -bullet -offset indent -compact
+.It
+A virtual machine home directory.
+.It
+A regular file inside a virtual machine home directory.
+.It
+A Qemu monitor socket file.
+.El
+.Pp
+If no
+.Ar path
+is provided, the current working directory is assumed.
+.
+.
+.Sh OPTIONS
+.
+The options are as follows:
+.
+.Bl -tag -width Ds
+.It Fl h
+Show usage information summary then exit.
+.El
+.
+.
+.Sh ENVIRONMENT
+.
+.Bl -tag -width Ds
+.It Ev XDG_CONFIG_HOME
+Location of user's configuration files, by default
+.Pa ~/.config .
+.El
+.
+.
+.Sh FILES
+.
+.Bl -tag -width Ds
+.It Pa /usr/local/lib/vmtools
+Libraries shared by the vmtools project utilities.
+.It Pa /usr/local/share/vmtools/vmtools.conf
+Virtual machine default settings, see
+.Xr vmtools.conf 5 .
+.El
+.Pp
+Moreover, the content of
+.Pa /usr/local/share/vmtools
+can be overridden in the following locations (in the order of precedence):
+.Bl -tag -width Ds
+.It ~/.config/vmtools
+User overrides (if
+.Cm cfg_include_userhome
+is set to
+.Dq yes ) .
+.It /etc/vmtools
+System-wide overrides.
+.El
+.
+.
+.Sh EXIT STATUS
+.
+.Ex -std
+.
+.
+.Sh EXAMPLES
+.
+.Bl -inset
+.It Example 1:
+Access the Qemu monitor shell of the current virtual machine:
+.Pp
+.Bd -literal -offset indent
+.Ic cd ~/path/to/my_vm
+.Ic vmmon
+.Ed
+.Pp
+.It Example 2:
+Access the Qemu monitor shell of another virtual machine:
+.Pp
+.Dl Ic vmmon ~/path/to/my_other_vm
+.Pp
+.It Example 3:
+Send a single command (here
+.Ic sendkey Ctrl-Alt-Del )
+to a Qemu hypervisor:
+.Pp
+.Dl Ic echo 'sendkey Ctrl-Alt-Del' | vmmon ~/path/to/my_vm
+.Pp
+.El
+.
+.
+.Sh SEE ALSO
+.
+.Xr vminfo 1 ,
+.Xr vmps 1 ,
+.Xr vmtools 7
+.
+.
+.Sh CAVEATS
+.
+.Nm
+requires
+.Xr socat 1
+to be available on the host system.
+.Pp
+If, in addition,
+.Xr rlwrap 1
+is also available it will be used to provide a more comfortable prompt based on
+the
+.Xr readline 3
+library.
+.
+.
+.Sh REPORTING BUGS
+.
+Please send bug reports to the
+.Lk http://github.com/WhiteWinterWolf/vmtools/issues "vmtools issues page" .
+.
+.\" ############################################################################
+.\" ### /usr/local/share/man/man1/vmmon.1.gz END
+.\" ############################################################################
