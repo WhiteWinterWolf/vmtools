@@ -103,6 +103,13 @@ childs_add() {
 
 	for child_dir
 	do
+		if [ "$child_dir" = "$parent_dir" ]
+		then
+			echo "ERROR (BUG): childs_add: Attempt to add '${child_dir}' as" \
+				"it's own child." >&2
+			return 1
+		fi
+
 		if [ "$force" != 'yes' ]
 		then
 			storage_isreadable -h -- "$child_dir" || return 1

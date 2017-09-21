@@ -35,7 +35,7 @@
 .Sh SYNOPSIS
 .
 .Nm
-.Op Fl hqvy
+.Op Fl hqsvy
 .Op Fl c | p
 .Op Ar vmhome_path ...
 .
@@ -75,13 +75,29 @@ Merge the virtual machine into its child.
 .Pp
 The virtual machine located in
 .Ar vmhome_path
-must have a single child.
+must have at least one child.
 .Pp
 This method merges the storage and settings of the virtual machine located in
 .Ar vmhome_path
-into its child and then deletes it, moving the child as necessary.
+into its child(s) and then deletes it, moving the child(s) as necessary.
 If the original virtual machine had a parent, it now becomes the parent of the
-child virtual machine.
+child(s) virtual machine.
+.Pp
+If the virtual machine located in
+.Ar vmhome_path
+has more than one child, safe merging (see
+.Fl s )
+is automatically enabled.
+This may induce a longer time to process the merge.
+.Pp
+If the virtual machine located in
+.Ar vmhome_path
+has no parent, its child will become root of the virtual machine hierarchy tree.
+If there is several childs, each one will become root of their own tree,
+becoming unrelated to each other.
+In this situation, unless
+.Fl y
+has been used an interactive confirmation is required before proceeding.
 .
 .It Fl p
 Merge the virtual machine into its parent (default behavior).
@@ -119,6 +135,31 @@ for more information about verbosity levels.
 See
 .Fl v
 to increase the verbosity level.
+.
+.It Fl s
+Enable safe merging.
+.Pp
+By default,
+.Nm
+attempts to apply a fast merging algorithm where the content of the virtual
+machine storage image is directly merged.
+The downside of this is that in case of an error, it becomes impossible to
+completely rollback to the previous state as the content of the image files has
+already be merged.
+This however does not break any virtual machine (the parent and child virtual
+machines simply have an identical storage content) and is usually acceptable in
+regards to the benefits.
+.Pp
+When safe mode is enabled,
+.Nm
+only operates on copies of the storage image files during the merging process.
+In case of error, this allows a complete rollback to the previous state.
+The downside of this is that storage images are often large files and copying
+them may therefore require time and disk space, making virtual machines merging
+a heavy and slow process.
+.Pp
+Note that for implemenation reasons safe mode is automatically enabled when
+child-merging a virtual machines with several childs.
 .
 .It Fl v
 Increase verbosity.
@@ -191,6 +232,8 @@ The operation ended successfully.
 An error occurred, incomplete tasks have been reverted.
 .It 2
 Wrong usage, nothing has been done.
+.It 3
+Operation cancelled by the user, nothing has been done.
 .El
 .
 .

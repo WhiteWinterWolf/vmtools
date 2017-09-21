@@ -45,8 +45,12 @@ Other options:
 # Global variables
 ################################################################################
 
-# If 'yes', merge the parent into the child.
-defaultmerge=''
+# Merge type, either 'p' (parent merge) or 'c' (child merge).
+mergetype=''
+
+# If 'yes', only safe merge is used.
+# If 'no', only fast merge is used.
+safemerge=''
 
 
 ################################################################################
@@ -67,11 +71,11 @@ _clean() {
 		"the destination '${merge_dst}'."
 
 	# Release locks.
-	if [ "$defaultmerge" != 'yes' -a -n "$merge_top" ]
+	if [ "$mergetype" = 'c' -a -n "$merge_top" ]
 	then
 		lock_release -- "$merge_top" || return 1
 	fi
-	lock_release -c -- "$merge_dst" || return 1
+	lock_release -c -- $merge_dst || return 1
 
 	# Remove old files.
 	homedir_delete -af -- "$merge_src" || return 1
@@ -82,94 +86,142 @@ _clean() {
 # _merge
 #
 _merge() {
-	local 'backing' 'merge_parent' 'merge_child' 'newpath' 'oldpath' 'oldname'
-	local 'prefix' 'setting' 'value'
+	local 'backing' 'child' 'merge_parent' 'merge_childs' 'newpath' 'oldpath'
+	local 'oldname' 'prefix' 'setting' 'tmppath' 'todelete' 'value'
+	todelete=''
 
 	cli_trace 3 "vmmerge: ${merge_src}: Merging storage into '${merge_dst}'."
 
-	if [ "$defaultmerge" = 'yes' ]
+	if [ "$mergetype" = 'p' ]
 	then
 		# Default (parent) merge
 		merge_parent=${merge_dst:?}
-		merge_child=${merge_src:?}
+		merge_childs=${merge_src:?}
 	else
 		# Reverse (child) merge
 		merge_parent=${merge_src:?}
-		merge_child=${merge_dst:?}
+		merge_childs=${merge_dst:?}
 	fi
 
-	settings_import -s -- "$merge_child" || return 1
-
-	# Merge or move to the parent all storage located in the child homedir.
-	for setting in $( settings_get | awk -F '=' \
-		'/^vm_storage_[a-z0-9_]*_backend/ { print $1 }' )
+	for child in $merge_childs
 	do
-		eval "value=\$$setting"
-		if [ -z "$value" ]
-		then
-			# No storage file defined.
-			continue
-		fi
+		settings_import -s -- "$child" || return 1
 
-		oldpath=$( storage_get_path -- "$value" ) || return 1
-		backing=$( storage_get_backingfile -- "$oldpath" ) || return 1
-		newpath=''
-
-		# Check if the storage file must be merged and/or moved.
-		if [ "${backing%/*}" = "$merge_parent" ]
-		then
-			# The backing file is located in the parent VM:
-			# The storage file and its backing file must be merged.
-			cli_trace 3 "vmmerge: $oldpath: QCOW2 image file commit" \
-				"into '${backing}'."
-			qemu-img 'commit' -q -- "$oldpath" || return 1
-
-			if [ "$defaultmerge" = 'yes' ]
+		# Merge or move to the parent all storage located in the child homedir.
+		for setting in $( settings_get | awk -F '=' \
+			'/^vm_storage_[a-z0-9_]*_backend/ { print $1 }' )
+		do
+			eval "value=\$$setting"
+			if [ -z "$value" ]
 			then
-				# Silently remove comitted storage files.
-				# `cleanup_backup' acts as a reversible `rm -f'.
-				cleanup_backup -m -- "$oldpath" || return 1
-				newpath=$backing
-			else
-				# Reverse merge: the parent VM will be deleted:
-				# The storage file must be moved.
-				_merge_mvstorage -- "$backing" "$oldpath" || return 1
+				# No storage file defined.
+				continue
 			fi
-		elif [ "${oldpath%/*}" = "$merge_parent" \
-			-a "$merge_parent" != "$merge_dst" ]
-		then
-			# The storage file is either a standalone file or its
-			# backing file is stored outside of the VM tree and should
-			# not be modified.
-			# The storage file needs to be moved as-is.
-			# It may be stored in a subdirectory of the original VM home,
-			# keep the same structure in the destination VM and ensure we do
-			# not overwrite anything unexpected to the user.
-			newpath=$( vmmv_mvpath -- "$oldpath" "$merge_dst" ) || return 1
-			newpath=$( storage_createpath -t "$newpath" -- "$oldpath" ) \
-				|| return 1
-			_merge_mvstorage - "$oldpath" "$newpath" || return 1
-		fi
 
-		# Update any modified storage path.
-		if [ -n "$newpath" ]
+			oldpath=$( storage_get_path -- "$value" ) || return 1
+			backing=$( storage_get_backingfile -- "$oldpath" ) || return 1
+			newpath=''
+
+			# Check if the storage file must be merged and/or moved.
+			if [ "${backing%/*}" = "$merge_parent" ]
+			then
+				# The backing file is located in the parent VM:
+				# The storage file and its backing file must be merged.
+				if [ "$safemerge" = 'yes' ]
+				then
+					# Safe mode: operate on a copy of the disk image file.
+
+					tmppath=$( mktemp -- "${backing}.XXXXXX" ) || return 1
+					cleanup_add rm -- "$tmppath"
+					storage_image_copy -- "$backing" "$tmppath" || return 1
+					cleanup_add qemu-img 'rebase' -u -b "$backing" -- "$oldpath"
+					qemu-img 'rebase' -u -b "$tmppath" -- "$oldpath" || return 1
+
+					cli_trace 3 "vmmerge: $oldpath: QCOW2 image safe file" \
+						"commit into '${tmppath}'."
+					qemu-img 'commit' -q -- "$oldpath" || return 1
+
+					if [ "$mergetype" = 'p' ]
+					then
+						# Replace backing file, keeping a backup.
+						_merge_mvstorage -- "$tmppath" "$backing" || return 1
+						# Silently remove comitted storage files.
+						# `cleanup_backup' acts as a reversible `rm -f'.
+						cleanup_backup -m -- "$oldpath" || return 1
+						newpath=$backing
+					else
+						# Reverse merge: the parent VM will be deleted:
+						# The storage file must be moved.
+						_merge_mvstorage -- "$tmppath" "$oldpath" || return 1
+						# Schedule the deletion of the original disk image.
+						str_list_add 'todelete' "$backing" || return 1
+					fi
+				else
+					# Fast mode: merge directly to the backing file.
+
+					cli_trace 3 "vmmerge: $oldpath: QCOW2 image fast file commit" \
+						"into '${backing}'."
+					qemu-img 'commit' -q -- "$oldpath" || return 1
+
+					if [ "$mergetype" = 'p' ]
+					then
+						# Silently remove comitted storage files.
+						# `cleanup_backup' acts as a reversible `rm -f'.
+						cleanup_backup -m -- "$oldpath" || return 1
+						newpath=$backing
+					else
+						# Reverse merge: the parent VM will be deleted:
+						# The storage file must be moved.
+						_merge_mvstorage -- "$backing" "$oldpath" || return 1
+					fi
+				fi
+			elif [ "$mergetype" = 'c' -a "${oldpath%/*}" = "$merge_parent" ]
+			then
+				# The storage file is either a standalone file or its
+				# backing file is stored outside of the VM tree and should
+				# not be modified.
+				# The storage file needs to be moved as-is.
+				# It may be stored in a subdirectory of the original VM home,
+				# keep the same structure in the destination VM and ensure we do
+				# not overwrite anything unexpected to the user.
+				newpath=$( vmmv_mvpath -- "$oldpath" "$child" ) || return 1
+				newpath=$( storage_createpath -t "$newpath" -- "$oldpath" ) \
+					|| return 1
+				_merge_mvstorage - "$oldpath" "$newpath" || return 1
+			fi
+
+			# Update any modified storage path.
+			if [ -n "$newpath" ]
+			then
+				prefix=$( storage_get_prefix -- "$value" )
+				settings_override "$setting" "${prefix}${newpath}"
+			fi
+		done
+
+		# Merge other settings too.
+		if [ "$mergetype" = 'p' ]
 		then
-			prefix=$( storage_get_prefix -- "$value" )
-			settings_override "$setting" "${prefix}${newpath}"
+			settings_import -as -- "$merge_parent" || return 1
+			settings_save -- "merged with '${merge_src}'" "$merge_dst" || exit 1
+		else
+			oldname=$vm_name
+			settings_import -as -- "$merge_parent" || return 1
+			settings_override 'vm_name' "$oldname"
+			if [ -n "$merge_top" ]
+			then
+				parent_add -- "$merge_top" || return 1
+			fi
+			settings_save -- "merged with '${merge_src}'" "$child" || exit 1
+			parent_clear
 		fi
 	done
 
-	# Merge other settings too.
-	oldname=$vm_name
-	settings_import -as -- "$merge_parent" || return 1
-	if [ "$defaultmerge" != 'yes' ]
+	if [ "$mergetype" = 'c' -a "$safemerge" = 'yes' ]
 	then
-		# Keep the name of the destination VM.
-		settings_override 'vm_name' "$oldname"
+		todelete=$( echo "$todelete" | sort -u )
+		# `cleanup_backup' acts as a reversible `rm -f'.
+		cleanup_backup -m -- $todelete || return 1
 	fi
-	parent_add -- "$merge_top" || return 1
-	settings_save -- "merged with '${merge_src}'" "$merge_dst" || exit 1
-	parent_clear
 }
 
 ###
@@ -206,9 +258,11 @@ _merge_mvstorage() {
 # _move
 #
 _move() {
-	local 'child' 'merge_childs' 'merge_parent' 'newhome' 'vmmv_move_dst'
+	local 'child' 'merge_childs' 'merge_parent' 'newchilds' 'updated_childs'
+	local 'newhome' 'vmmv_move_dst'
+	updated_childs=''
 
-	if [ "$defaultmerge" = 'yes' ]
+	if [ "$mergetype" = 'p' ]
 	then
 		# Default (parent) merge.
 		merge_parent=$merge_dst
@@ -221,10 +275,13 @@ _move() {
 
 	cli_trace 3 "vmmerge: ${merge_src}: Updating parent-child links."
 
-	# Remove the link between the merge source and its parent.
-	childs_remove -- "$merge_parent" "$merge_src" || return 1
-	childs_save -- "$merge_parent" || return 1
-	settings_setparent '' "$merge_src" || return 1
+	if [ -n "$merge_parent" ]
+	then
+		# Remove the link between the merge source and its parent.
+		childs_remove -- "$merge_parent" "$merge_src" || return 1
+		childs_save -- "$merge_parent" || return 1
+		settings_setparent '' "$merge_src" || return 1
+	fi
 
 	# Remove the link between the merge source and its childs.
 	if [ -n "$merge_childs" ]
@@ -233,13 +290,20 @@ _move() {
 		childs_clear -- "$merge_src" || return 1
 		childs_save -- "$merge_src" || return 1
 
-		childs_init -- "$merge_parent" || return 1
+		newchilds=''
 		for child in $merge_childs
 		do
 			# Move all childs currently below the source dir to its new parent.
 			case "$child" in "${merge_src}/"*)
-				newhome=$( storage_createpath -n -t "$merge_parent" -- \
-					"$child" ) || return 1
+				if [ -n "$merge_parent" ]
+				then
+					newhome=$( storage_createpath -n -t "$merge_parent" -- \
+						"$child" ) || return 1
+				else
+					# "$merge_parent" is empty when child merging a root VM.
+					newhome=$( storage_createpath -n -t "${merge_src%/*}" -- \
+						"$child" ) || return 1
+				fi
 
 				if vmmv_move -n -- "$child" "$newhome"
 				then
@@ -262,17 +326,23 @@ _move() {
 			then
 				vmmv_mvsettings -- "$merge_src" "$merge_top" "$child" \
 					|| return 1
-				childs_add -- "$merge_top" "$child" || return 1
+				str_list_add 'newchilds' "$child" || return 1
 			else
 				settings_setparent '' "$child" || return 1
 			fi
+
+			str_list_add 'updated_childs' "$child"
 		done
-		childs_save -- "$merge_parent" || return 1
+		if [ -n "$newchilds" -a -n "$merge_parent" ]
+		then
+			childs_add -- "$merge_parent" $newchilds || return 1
+			childs_save -- "$merge_parent" || return 1
+		fi
 
 		# Track the new destination location for child (reverse) merge.
-		if [ "$defaultmerge" != 'yes' ]
+		if [ "$mergetype" = 'c' ]
 		then
-			merge_dst=$child
+			merge_dst=$updated_childs
 		fi
 	fi
 }
@@ -285,19 +355,20 @@ _move() {
 include_globalconf || exit 1
 
 OPTIND=1
-while getopts "chpqvy" param
+while getopts "chpqsvy" param
 do
 	case "$param" in
 		'c'|'p') # Merge modes.
-			if [ -n "$defaultmerge" ]
+			if [ -n "$mergetype" ]
 			then
 				echo "ERROR: You cannot mix several merge types." >&2
 				exit 2
 			fi
-			case "$param" in
-				'c') defaultmerge='no';;
-				'p') defaultmerge='yes';;
-			esac
+			mergetype=$param
+			;;
+
+		's') # Safe merge.
+			safemerge='yes'
 			;;
 
 		'h') # Show usage information.
@@ -336,9 +407,9 @@ then
 	set -x
 fi
 
-if [ -z "$defaultmerge" ]
+if [ -z "$mergetype" ]
 then
-	defaultmerge='yes'
+	mergetype='p'
 fi
 
 if [ $# -eq 0 ]
@@ -367,7 +438,7 @@ do
 		# - Reverse (child) merge (`vmmerge -c C`):
 		#   A/B(=$merge_top)/C(=$merge_src)/D(=$merge_dst)/E --> A/B/D(+C)/E
 		#
-		if [ "$defaultmerge" = 'yes' ]
+		if [ "$mergetype" = 'p' ]
 		then
 			# Default merge (parent).
 
@@ -398,7 +469,7 @@ do
 					printf 'ERROR: %s: Must have only one child.\n' \
 						"$merge_dst" >&2
 					printf 'Childs lists:\n' >&2
-					printf '%s\n' "$childs" | sed 's/^/    /' >&2
+					printf '    %s\n' $childs >&2
 					exit 1
 				fi
 			fi
@@ -409,30 +480,37 @@ do
 
 			# Set and lock the merge source.
 			merge_src=$( realpath -- "$p" ) || exit 1
-			lock_acquire -- "$merge_src" || exit 1
-
-			# Check there is one and only one child, lock it and its descendants.
-			merge_dst=$( childs_get_list -- "$merge_src" ) || exit 1
-			if [ ! -d "$merge_dst" ]
-			then
-				if [ -z "$merge_dst" ]
-				then
-					echo "ERROR: ${p}: There is no child to merge from." >&2
-				else
-					echo "ERROR: ${p}: Must have only one child, current" \
-						"childs:" >&2
-					printf '    %s\n' $merge_dst >&2
-				fi
-				exit 1
-			fi
-			merge_dst=$( realpath -- "$merge_dst" ) || exit 1
-			lock_acquire -c -- "$merge_dst" || exit 1
+			lock_acquire -c -- "$merge_src" || exit 1
 
 			merge_top=$( parent_get_nearest -- "$merge_src" ) || exit 1
 			if [ -n "$merge_top" ]
 			then
 				lock_acquire -- "$merge_top" || exit 1
 			fi
+
+			# Check there is one and only one child, lock it and its descendants.
+			merge_dst=$( childs_get_list -- "$merge_src" ) || exit 1
+			if [ -z "$merge_dst" ]
+			then
+				echo "ERROR: ${p}: There is no child to merge to." >&2
+				exit 1
+			fi
+			case "$merge_dst" in *"${newline}"*)
+				if [ -z "$merge_top" ]
+				then
+					echo "'${merge_src}' is a root virtual machine, merging" \
+						"it will split the following childs into seperate" \
+						"hiearchies:" >&2
+					printf '    %s\n' $merge_dst >&2
+					cli_confirm || exit 3
+				fi
+				# The source will need to be merge to every child, the only
+				# way to achieve this is through safe merge (this could be
+				# avoided if Qemu directly implemented child-merging in
+				# `qemu-img` but this is not the case currently).
+				cli_trace 3 "Several child to merge to, enabling safe merge."
+				safemerge='yes'
+			esac
 		fi
 		# Set the top directory as temporary directory.
 		# This directory will store a backup of the deleted disk image.
@@ -444,12 +522,11 @@ do
 		then
 			echo "ERROR: ${p}: An error occured while merging the virtual" \
 				"machines." >&2
-			# The only way to allow parent rollback would be to create a
-			# backup copy of the image file, which may be resource a consuming
-			# (or downright unrealistic) process depending on its size.
-			# This limitation however will not break the virtual machines.
-			echo "Depending on the error, child  disk image content may" \
-				"already be committed to its parent." >&2
+			if [ "$safemerge" != 'yes' ]
+			then
+				echo "Depending on the error, child  disk image content may" \
+					"already be committed to its parent." >&2
+			fi
 			exit 1
 		fi
 
@@ -457,8 +534,11 @@ do
 		then
 			echo "ERROR: ${p}: An error occured while moving the virtual" \
 				"machines." >&2
-			echo "Child disk image content has already been committed to its" \
-				"parent." >&2
+			if [ "$safemerge" != 'yes' ]
+			then
+				echo "Child disk image content has already been committed to its" \
+					"parent." >&2
+			fi
 			exit "$rc"
 		fi
 
@@ -466,8 +546,11 @@ do
 		then
 			echo "ERROR: ${p}: An error occured while removing obsoleted" \
 				"data." >&2
-			echo "Child disk image content has already been committed to its" \
-				"parent." >&2
+			if [ "$safemerge" != 'yes' ]
+			then
+				echo "Child disk image content has already been committed to its" \
+					"parent." >&2
+			fi
 			exit 1
 		fi
 

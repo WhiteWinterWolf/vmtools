@@ -615,6 +615,13 @@ settings_setparent() {
 
 	for child
 	do
+		if [ "$child" = "$newparent" ]
+		then
+			echo "ERROR (BUG): settings_setparent: Attempt to set '${child}'" \
+				"as its own parent." >&2
+			return 1
+		fi
+
 		cleanup_backup -- "${child}/${cfg_file_vmsettings:?}"
 
 		(

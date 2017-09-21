@@ -42,6 +42,8 @@
 #         Get the path section of a backend path.
 #   storage_get_prefix backend_path
 #         Get the prefix section of a backend path.
+#   storage_image_copy source destination
+#         Copy a virtual hard-disk image file.
 #   storage_isreadable [-d|-h|-f] path
 #         Check if a given path can be safely read.
 #   storage_iswritable [-d|-h|-f|-n] path
@@ -300,6 +302,42 @@ storage_get_prefix() {
 	case "$backend_path" in "rw:"*|"snap:"*|"ro:"*)
 		printf '%s:' "${backend_path%%":"*}"
 	esac
+}
+
+###
+# storage_image_copy source destination
+#
+# Copy the virtual hard-disk image file `source' to `destination'.
+#
+# This function relies on `qemu-img' to copy the data.
+# Compared to `cp', `qemu-img' better handles files metadata (sparse files,
+# Btrfs COW, etc.). Third-party files will be automatically converted, thus
+# cleanly handling even VMDK images with several extent files.
+#
+storage_image_copy() {
+	local 'destination' 'qemu_opts' 'source'
+	[ "${1-}" = '--' ] && shift
+	source=${1:?"ERROR (BUG): storage_image_copy: Missing parameter."}
+	destination=${2:?"ERROR (BUG): storage_image_copy: Missing parameter."}
+	qemu_opts=''
+
+	if [ "${cfg_ui_verbosity:?}" -ge 2 ]
+	then
+		# Display qemu-img progress information.
+		echo "${vm_home}: Copying '${source}' to '${destination}':" >&2
+		qemu_opts="${qemu_opts}p"
+	fi
+	if [ "$vm_qemu_compress" = 'yes' ]
+	then
+		qemu_opts="${qemu_opts}c"
+	fi
+
+	# Compared to `cp', `qemu-img' better handles files metadata (sparse
+	# files, Btrfs COW, etc.). Third-party files will be automatically
+	# converted, thus cleanly handling even VMDK images with several
+	# extent files.
+	qemu-img 'convert' ${qemu_opts:+"-${qemu_opts}"} -O 'qcow2' -o 'nocow=on' \
+		-- "$source" "$destination" || return 1
 }
 
 ###

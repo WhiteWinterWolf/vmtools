@@ -35,6 +35,10 @@
 ################################################################################
 
 # TODO: Explode `check_all()' into modules.
+# Make each module more independant: each should generate their own tree
+# so there is no dependency anymore on the actions made by previous modules
+# (also check vmtree(): the function to create and to check the tree should
+# have similar syntaxes).
 # Gold solution: use dynamic dependency between modules (see make, rcorder),
 # otherwise simply use a numeric prefix.
 #
@@ -1515,65 +1519,161 @@ check_all() {
 	{
 		for name in $list_names
 		do
-			progress "${name} (child merge)"
-
-			# Child merge on `A' should fail as it has several child VMs.
-			check test -d "${name}/${name}_A/${name}_B" \
-				-a -d "${name}/${name}_A/${name}_bis_B"
-			check ! vmmerge -cy -- "${name}/${name}_A"
-
-			# Child merge on 'B'.
-			check test -d "${name}/${name}_A/${name}_B/${name}_C" \
-				-a -d "${name}/${name}_A/${name}_B/${name}_C/${name}_D" \
-				-a -d "${name}/${name}_A/${name}_B/${name}_C/${name}_bis_D" \
-				-a ! -e "${name}/${name}_A/${name}_B/${name}_D" \
-				-a ! -e "${name}/${name}_A/${name}_B/${name}_bis_D"
-			check vmmerge -cy -- "${name}/${name}_A/${name}_B"
-			check test ! -e "${name}/${name}_A/${name}_B" \
-				-a -d "${name}/${name}_A/${name}_C/${name}_D" \
-				-a -d "${name}/${name}_A/${name}_C/${name}_bis_D"
-
-			check vmtree -l 1 -- "$name"
-			check vmtree -p "$name" -- "${name}/${name}_A"
-			check vmtree -- "${name}/${name}_bis_A/${name}"
-			check vmtree -p "${name}/${name}_A" -- \
-				"${name}/${name}_bis_A/${name}_B"
-			check vmtree -p "${name}/${name}_A/${name}_C/${name}_D" -- \
-				"${name}/${name}_bis_A/${name}_E"
-
-			check boot -s -- "${name}/${name}_A/${name}_C"
-			check boot -- "${name}/${name}_A/${name}_C/${name}_D/${name}_E"
-
 			progress "${name} (parent merge)"
 
+			# Main tree structure:
+			#    ${name}                    ${name}
+			#    ├─ ${name}_A               ${name}/${name}_A
+			#    │  ├─ ${name}              ${name}/${name}_A/${name}
+			#    │  ├─ ${name}_B            ${name}/${name}_A/${name}_B
+			#    │  │  └─ ${name}_C         ${name}/${name}_A/${name}_B/${name}_C
+			#    │  │     ├─ ${name}_D      ${name}/${name}_A/${name}_B/${name}_C/${name}_D
+			#    │  │     │  ├─ ${name}_E   ${name}/${name}_A/${name}_B/${name}_C/${name}_D/${name}_E
+			#    │  │     │  └─ ${name}_E   ${name}/${name}_bis_A/${name}_E
+			#    │  │     └─ ${name}_bis_D  ${name}/${name}_A/${name}_B/${name}_C/${name}_bis_D
+			#    │  ├─ ${name}_bis_B        ${name}/${name}_A/${name}_bis_B
+			#    │  └─ ${name}_B            ${name}/${name}_bis_A/${name}_B
+			#    │     └─ ${name}_C         ${name}/${name}_bis_A/${name}_B/${name}_C
+			#    │        ├─ ${name}_D      ${name}/${name}_bis_A/${name}_B/${name}_C/${name}_D
+			#    │        │  └─ ${name}_E   ${name}/${name}_bis_A/${name}_B/${name}_C/${name}_D/${name}_E
+			#    │        └─ ${name}_bis_D  ${name}/${name}_bis_A/${name}_B/${name}_C/${name}_bis_D
+			#    └─ ${name}_bis_A           ${name}/${name}_bis_A
+
 			# Parent merge on 'D' should fail as it has a sibling brother.
-			check test -d "${name}/${name}_A/${name}_C/${name}_D" \
-				-a -d "${name}/${name}_A/${name}_C/${name}_bis_D"
-			check ! vmmerge -y -- "${name}/${name}_A/${name}_C/${name}_D"
+			check test -d "${name}/${name}_A/${name}_B/${name}_C/${name}_D" \
+				-a -d "${name}/${name}_A/${name}_B/${name}_C/${name}_bis_D"
+			check ! vmmerge -y -- "${name}/${name}_A/${name}_B/${name}_C/${name}_D"
 			# Deleting it shall allow the merge to proceed.
-			check vmrm -y -- "${name}/${name}_A/${name}_C/${name}_bis_D"
-			check test -d "${name}/${name}_A/${name}_C/${name}_D" \
-				-a ! -e "${name}/${name}_A/${name}_C/${name}_bis_D"
+			check vmrm -y -- "${name}/${name}_A/${name}_B/${name}_C/${name}_bis_D"
+			check test -d "${name}/${name}_A/${name}_B/${name}_C/${name}_D" \
+				-a ! -e "${name}/${name}_A/${name}_B/${name}_C/${name}_bis_D"
 
 			# Parent merge on `D'.
-			check test -d "${name}/${name}_A/${name}_C" \
-				-a ! -e "${name}/${name}_A/${name}_D"
+			check test -d "${name}/${name}_A/${name}_B/${name}_C" \
+				-a ! -e "${name}/${name}_A/${name}_B/${name}_D"
 			# The same merge command as above should now work.
-			check vmmerge -y -- "${name}/${name}_A/${name}_C/${name}_D"
-			check test -d "${name}/${name}_A/${name}_C" \
-				-a ! -e "${name}/${name}_A/${name}_C/${name}_D" \
-				-a ! -e "${name}/${name}_A/${name}_D"
+			check vmmerge -y -- "${name}/${name}_A/${name}_B/${name}_C/${name}_D"
+			check test -d "${name}/${name}_A/${name}_B/${name}_C" \
+				-a ! -e "${name}/${name}_A/${name}_B/${name}_C/${name}_D" \
+				-a ! -e "${name}/${name}_A/${name}_B/${name}_D"
 
 			check vmtree -l 1 -- "$name"
 			check vmtree -p "$name" -- "${name}/${name}_A"
 			check vmtree -- "${name}/${name}_bis_A/${name}"
 			check vmtree -p "${name}/${name}_A" -- \
 				"${name}/${name}_bis_A/${name}_B"
-			check vmtree -p "${name}/${name}_A/${name}_C" -- \
+			check vmtree -p "${name}/${name}_A/${name}_B/${name}_C" -- \
 				"${name}/${name}_bis_A/${name}_E"
 
-			check boot -s -- "${name}/${name}_A/${name}_C"
-			check boot -- "${name}/${name}_A/${name}_C/${name}_E"
+			progress "${name} (parent merge to root)"
+
+			# Need to delete "${name}/${name}_bis_A" first
+			check vmmv -y -- "${name}/${name}_bis_A/${name}" \
+				"${name}/${name}_bis_A/${name}_B" \
+				"${name}/${name}_bis_A/${name}_E" \
+				"${name}"
+			check vmrm -y -- "${name}/${name}_bis_A"
+
+			check test ! -e "${name}/${name}_bis_A"
+			check vmtree -l 0 -- "$name"
+			check vmtree -- "${name}/${name}"
+			check vmtree -p "$name" -- "${name}/${name}"
+			check vmtree -p "$name" -- "${name}/${name}_A"
+			check vmtree -p "${name}/${name}_A/${name}_B/${name}_C" \
+				-- "${name}/${name}_E"
+
+			check test -d "${name}/${name}_A/${name}" \
+				-a -d "${name}/${name}_A/${name}_B" \
+				-a -d "${name}/${name}_A/${name}_bis_B" \
+				-a -d "${name}/${name}" \
+				-a -d "${name}/${name}_B" \
+				-a ! -e "${name}/${name}_1" \
+				-a ! -e "${name}/${name}_B_1" \
+				-a ! -e "${name}/${name}_bis_B"
+			check vmmerge -y -- "${name}/${name}_A"
+			# "${name}/${name}_A/${name}" will be moved to "${name}/${name}_1"
+			check test ! -e "${name}/${name}_A" \
+				-a -d "${name}/${name}_1" \
+				-a -d "${name}/${name}_B_1" \
+				-a -d "${name}/${name}_bis_B"
+
+			check test ! -e "${name}/${name}_A"
+			check vmtree -l 0 -- "$name"
+			check vmtree -- "${name}/${name}"
+			check vmtree -p "$name" -- "${name}/${name}_1"
+			check vmtree -p "${name}" -- "${name}/${name}_B_1"
+			check vmtree -p "${name}" -- "${name}/${name}_bis_B"
+			check vmtree -p "${name}/${name}_B_1/${name}_C" -- "${name}/${name}_E"
+
+			check boot -s -- "${name}/${name}_B_1/${name}_C"
+			check boot -- "${name}/${name}_B_1/${name}_C/${name}_E"
+
+			progress "${name} (child merge)"
+
+			# The tree below "${name}/${name}" (previously
+			# "${name}/${name}_bis_A/${name}" before the deletion of
+			# "${name}_bis_A") is an independant copy:
+			#     ${name}
+			#     ├─ ${name}_A
+			#     │  ├─ ${name}
+			#     │  ├─ ${name}_B
+			#     │  │  └─ ${name}_C
+			#     │  │     ├─ ${name}_D
+			#     │  │     │  └─ ${name}_E
+			#     │  │     └─ ${name}_bis_D
+			#     │  └─ ${name}_bis_B
+			#     └─ ${name}_bis_A
+			#
+			# It will be used to test child merges.
+
+			# Child merge on "${name}" makes "${name}_A" and "${name}_bis_A"
+			# become indepedant roots.
+			check test -d "${name}/${name}/${name}_A" \
+				-a -d "${name}/${name}/${name}_bis_A" \
+				-a ! -e "${name}/${name}_A" \
+				-a ! -e "${name}/${name}_bis_A"
+			check vmmerge -cy -- "${name}/${name}"
+			check test ! -e "${name}/${name}" \
+				-a -d "${name}/${name}_A" \
+				-a -d "${name}/${name}_bis_A"
+
+			check vmtree -- "${name}/${name}_A"
+			check vmtree -- "${name}/${name}_bis_A"
+
+			# "${name}_A/${name}_B" has one child, a child merge uses fast
+			# merge by default.
+			check test -d "${name}/${name}_A/${name}_B/${name}_C" \
+				-a ! -e "${name}/${name}_A/${name}_C"
+			check vmmerge -cy -- "${name}/${name}_A/${name}_B"
+			check test ! -e "${name}/${name}_A/${name}_B" \
+				-a -d "${name}/${name}_A/${name}_C"
+
+			check vmtree -- "${name}/${name}_A"
+
+			# "${name}_A/${name}_C" has two child, a child merge uses safe
+			# merge by default.
+			check test -d "${name}/${name}_A/${name}_C/${name}_D" \
+				-a -d "${name}/${name}_A/${name}_C/${name}_bis_D" \
+				-a ! -e "${name}/${name}_A/${name}_D" \
+				-a ! -e "${name}/${name}_A/${name}_bis_D"
+			check vmmerge -cy -- "${name}/${name}_A/${name}_C"
+			check test ! -e "${name}/${name}_A/${name}_C" \
+				-a -d "${name}/${name}_A/${name}_D" \
+				-a -d "${name}/${name}_A/${name}_bis_D"
+
+			check vmtree -- "${name}/${name}_A"
+
+			# Child merge to the leaf VM "${name}_A/${name}_D".
+			check test -d "${name}/${name}_A/${name}_D/${name}_E" \
+				-a ! -e "${name}/${name}_A/${name}_E"
+			check vmmerge -cy -- "${name}/${name}_A/${name}_D"
+			check test ! -e "${name}/${name}_A/${name}_D" \
+				-a -d "${name}/${name}_A/${name}_E"
+
+			check vmtree -- "${name}/${name}_A"
+
+			check boot -s -- "${name}/${name}_A"
+			check boot -- "${name}/${name}_A/${name}_E"
 		done
 
 		# Update the tree listing with the newly merged directories.
@@ -1913,6 +2013,19 @@ vmsettingsfile() {
 ###
 # vmtree [-l depth_level] [-p parent_path] vm_path
 #
+# TODO: Modify this function to that the caller has to call `vmtree` only
+# once instead of putting a block of vmtree, this should avoid to execute the
+# same test on the same VM several times (see the call to `vmfix`).
+# For instance, replace:
+#     check vmtree -- "${name}/${name}"
+#     check vmtree -p "$name" -- "${name}/${name}_1"
+#     check vmtree -p "${name}/${name}_C" -- "${name}/${name}_E"
+# With something like:
+#     check vmtree \
+#         -p ''                  -d "${name}/${name}" \
+#         -p "${name}"           -d "${name}/${name}_1"
+#         -p "${name}/${name}_C" -d "${name}/${name}_E"
+#
 vmtree() {
 	local 'depth_level' 'dir' 'opt' 'OPTARG' 'OPTIND' 'parent_path' 'startdir'
 	depth_level=''
@@ -1936,15 +2049,18 @@ vmtree() {
 	# shellcheck disable=SC2086
 	check vmsettingsfile ${parent_path:+-p${IFS}"${parent_path}"} -- "$startdir"
 
-	# SC2044: Parameter expansion disabled and IFS set to newline.
-	# SC2086: Word splitting expected around `$IFS'.
-	# shellcheck disable=SC2044,SC2086
-	for dir in $( find "./${startdir}" -mindepth 1 \
-		${depth_level:+-maxdepth${IFS}"${depth_level}"} -type d \
-		-a ! -path "$( printf '*\n*' )" )
-	do
-		check vmsettingsfile -p "${dir%/*}" -- "$dir"
-	done
+	if [ -z "$depth_level" -o "$depth_level" != "0" ]
+	then
+		# SC2044: Parameter expansion disabled and IFS set to newline.
+		# SC2086: Word splitting expected around `$IFS'.
+		# shellcheck disable=SC2044,SC2086
+		for dir in $( find "./${startdir}" -mindepth 1 \
+			${depth_level:+-maxdepth${IFS}"${depth_level}"} -type d \
+			-a ! -path "$( printf '*\n*' )" )
+		do
+			check vmsettingsfile -p "${dir%/*}" -- "$dir"
+		done
+	fi
 }
 
 

@@ -276,7 +276,7 @@ mod_clone_backing() {
 # mod_clone_copy
 #
 mod_clone_copy() {
-	local 'ddst_storage' 'qemu_opts'
+	local 'dst_storage'
 
 	dst_storage=$( storage_createpath -s ".qcow2" -- \
 		"${vm_home:?}/${src_storage##*/}" ) || return 1
@@ -291,25 +291,7 @@ mod_clone_copy() {
 		cli_trace 4 "mod_clone_copy: ${vm_home}: ${dst_storage}: Copy" \
 			"('qemu-img') from '${src_storage}'" \
 			"(\$vmcp_action='${vmcp_action}')."
-
-		qemu_opts=''
-		if [ "${cfg_ui_verbosity:?}" -ge 2 ]
-		then
-			# Display qemu-img progress information.
-			echo "${vm_home}: Copying '${src_storage}' to '${dst_storage}':" >&2
-			qemu_opts="${qemu_opts}p"
-		fi
-		if [ "$vm_qemu_compress" = 'yes' ]
-		then
-			qemu_opts="${qemu_opts}c"
-		fi
-
-		# Compared to `cp', `qemu-img' better handles files metadata (sparse
-		# files, Btrfs COW, etc.). Third-party files will be automatically
-		# converted, thus cleanly handling event VMDK images with several
-		# extent files.
-		qemu-img 'convert' ${qemu_opts:+"-${qemu_opts}"} -O 'qcow2' \
-			-o 'nocow=on' -- "$src_storage" "$dst_storage" || return 1
+		storage_image_copy -- "$src_storage" "$dst_storage" || return 1
 	fi
 
 	settings_override "${setting:?}" "${prefix}${dst_storage}" || return 1
