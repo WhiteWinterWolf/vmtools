@@ -177,7 +177,7 @@ mod_buildcmd() {
 									"to start it in snapshot or read-only" \
 									"mode." >&2
 								echo "Childs list:" >&2
-								printf '%s\n' "$childs" | sed 's/^/    /' >&2
+								printf '    %s\n' $childs >&2
 								return 1
 							fi
 						fi

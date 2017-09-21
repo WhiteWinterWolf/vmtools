@@ -96,7 +96,7 @@ homedir_clear() {
 		then
 			echo "ERROR: ${dir}: This directory cannot be modifed as it" \
 				"contains a virtual machine with childs:" >&2
-			printf '%s' "$childs" | sed 's/^/    /' >&2
+			printf '    %s\n' $childs >&2
 			echo "Use 'vmrm -r' to delete a virtual machine recursively." >&2
 			return 1
 		fi
