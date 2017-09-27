@@ -27,7 +27,16 @@ Latest news on the project can be found on the [project's main page][news].
 
 ## Guided tour
 
-A guided tour of vmtools main features will be available very soon.
+-	[Part 1 - introduction and basic usage][tour1]:
+	Install vmtools and use vmup to boot disk image files.
+-	[Part 2 - manage virtual machines][tour2]:
+	Fork, merge, move, rename and delete virtual machines.
+
+
+[tour1]: https://www.whitewinterwolf.com/posts/2017/09/18/vmtools-guided-tour-part-1-introduction-and-basic-usage/
+	"vmtools guided tour, part 1: introduction and basic usage"
+[tour2]: https://www.whitewinterwolf.com/posts/2017/09/21/vmtools-guided-tour-part-2-manage-virtual-machines/
+	"vmtools guided tour, part 2: manage virtual machines"
 
 
 ## Man pages
@@ -85,6 +94,29 @@ For developers and more advanced users:
 -	As last resort, you can directly check the code.
 	I documented in a way which, I hope, will make it easy for you to find the
 	information you are looking for.
+
+
+# Upcoming features
+
+Here are the main planned features:
+
+-	**Rank 1**:
+	-	Support of guests sleep mode, including starting sleeping guests in
+		snapshot mode (ie. restore the same content to RAM on each start).
+	-	Add a command to easily insert/eject removable medias while a guest is
+		running.
+
+-	**Rank 2**:
+	-	Develop templates and features (including floppy drives) to both
+		support legacy guests and offer better performance for modern ones
+		(disk I/O in particular may be easily improvable).
+
+-	**Rank 3**:
+	-	Implement auto-snapshoting: automatically keep the last *n* snapshots
+		to allow easier guest rollback.
+
+*vmtools* is currently in early development stage, in particular expect
+settings names and default values to change.
 
 
 # Report an issue
