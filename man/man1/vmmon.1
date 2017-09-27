@@ -35,7 +35,7 @@
 .Sh SYNOPSIS
 .
 .Nm vmcp
-.Op Fl h
+.Op Fl hn
 .Op Ar path
 .
 .
@@ -70,6 +70,19 @@ The options are as follows:
 .Bl -tag -width Ds
 .It Fl h
 Show usage information summary then exit.
+.
+.It Fl n
+Don't use
+.Xr rlwrap 1 ,
+even if it is available on the host, access the raw Qemu
+Monitor prompt instead.
+.Pp
+This option has no effect if
+.Xr rlwrap 1
+is not available on the host.
+.Pp
+Use this option if you encounter any issue when using
+.Xr rlwrap 1 .
 .El
 .
 .

@@ -22,25 +22,20 @@
 #
 ################################################################################
 
+# TODO: Integrate more rlwrap features, in particular:
+#     -c: Complete filenames
+#     -p: Prompt color
+#     -r: Put all words seen on in- and output on the completion list.
+
 usage="Access the Qemu monitor shell.
 
 Usage:
-  vmmon [-h] [path]
+  vmmon [-hn] [path]
 
 Options:
   -h    Show usage information.
+  -n    Don't use 'rlwrap', use raw Qemu Monitor prompt.
 "
-
-################################################################################
-# Global variables
-################################################################################
-
-# Directory containing the socket file.
-socket_dir=''
-
-# Name of the socket file.
-socket_file=''
-
 
 ################################################################################
 # Global variables
@@ -54,6 +49,9 @@ socket_file=''
 
 # VM home dir, if the socket path has not been directly provided by the user.
 vmhome=''
+
+# If "no", do not use `rlwrap' even if available.
+use_rlwrap=''
 
 
 ################################################################################
@@ -73,16 +71,26 @@ done
 
 include_globalconf || exit 1
 
-if [ "${1-}" = '-h' ]
-then
-	printf '%s\n' "$usage"
-	exit 0
-fi
+OPTIND=1
+while getopts "hn" param
+do
+	case "$param" in
+		'h') # Show usage information.
+			printf '%s\n' "$usage"
+			exit 0
+			;;
 
-if [ "${1-}" = '--' ]
-then
-	shift
-fi
+		'n') # Raw Qemu Monitor prompt.
+			use_rlwrap='no'
+			;;
+
+		*)
+			printf 'Unexpected argument: %s\n' "$1" >&2
+			exit 2
+			;;
+	esac
+done
+shift $(( OPTIND - 1 ))
 
 if [ $# -gt 1 ]
 then
@@ -125,6 +133,7 @@ then
 fi
 
 if [ -n "$vmhome" ]
+then
 	# The `buildcmd' modules may be customized and may not necessarily store
 	# the socket file in the VM home dir as the default modules do.
 	if [ ! -r "${vmhome}/${cfg_file_pid}" ]
@@ -159,10 +168,10 @@ then
 	exit 1
 fi
 
-if type 'rlwrap' >/dev/null 2>&1
+if test "$use_rlwrap" != 'no' && type 'rlwrap' >/dev/null 2>&1
 then
-	exec rlwrap -C qmp socat - "UNIX-CONNECT:$( str_escape_grep -c ",!'\"" -- \
-		"$socket_file" )"
+	exec rlwrap -C vmmon socat - "UNIX-CONNECT:$( str_escape_grep -c ",!'\"" \
+		-- "$socket_file" )"
 else
 	exec socat - "UNIX-CONNECT:$( str_escape_grep -c ",!'\"" -- \
 		"$socket_file" )"
