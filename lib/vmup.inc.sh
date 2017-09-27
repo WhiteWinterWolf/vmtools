@@ -158,8 +158,17 @@ vmup_parseargs() {
 				;;
 
 			'o') # Override a setting.
-				value=$( str_unescape -- "${OPTARG#*=}" ) || return 2
-				settings_override "${OPTARG%%=*}" "$value" || return 2
+				case "$OPTARG" in
+					*?=?*)
+						settings_override "${OPTARG%%=*}" "${OPTARG#*=}"  \
+							|| return 2
+						;;
+					*)
+						echo "$OPTARG: Malformed option value, it must be" \
+							"'vm_setting_name=value'." >&2
+						return 2
+						;;
+				esac
 				;;
 
 			'q') # Decrease verbosity.
@@ -178,7 +187,7 @@ vmup_parseargs() {
 				then
 					echo "ERROR: You cannot mix options such as 'read-only'" \
 						"(-r) and 'snapshot-mode' (-s) together." >&2
-					return 1
+					return 2
 				fi
 				;;
 
@@ -191,7 +200,7 @@ vmup_parseargs() {
 				then
 					echo "ERROR: You cannot mix options such as 'read-only'" \
 						"(-r) and 'snapshot' (-s) together." >&2
-					return 1
+					return 2
 				fi
 				;;
 
